@@ -9,6 +9,7 @@ import tensorflow as tf
 
 import distribute_flags as flags
 import distribute_utils as utils
+import distribute_train as train
 import distribute_log as logger
 
 
@@ -43,6 +44,12 @@ def main(self):
 
     config = utils.RunConfig(
         session_config=sess_config, model_dir=flags.FLAGS.model_position)
+
+    tf.contrib.learn.learn_runner.run(
+        train.train(),
+        run_config=config,
+        hparams=tf.contrib.training.HParams(
+            is_chief=config.is_chief))
 
 
 if __name__ == '__main__':

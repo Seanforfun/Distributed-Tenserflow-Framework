@@ -34,11 +34,6 @@ tf.app.flags.DEFINE_boolean('sync', False,
                             """Whether to have all workers update synchronize""")
 
 # Training options
-tf.app.flags.DEFINE_integer('data_load_option', 1,
-                            """
-                            1: Using tf-record to load data(Preferred).
-                            2: Use placeholder to create data.
-                            """)
 tf.app.flags.DEFINE_integer('gpu_num', 1,
                             """
                             The number of gpus used. Uses only CPU if set to 0.
@@ -63,6 +58,15 @@ tf.app.flags.DEFINE_integer('input_image_width', 224,
                             """Input image width.""")
 tf.app.flags.DEFINE_integer('sample_number', 100000,
                             """Total sample numbers to train.""")
+
+# Training Input parameters
+tf.app.flags.DEFINE_string('data_dir', 'YOUR DATA PATH',
+                           """Path to save data.""")
+tf.app.flags.DEFINE_integer('data_load_option', 1,
+                            """
+                            1: Using tf-record to load data(Preferred).
+                            2: Use placeholder to create data.
+                            """)
 
 # Files position
 tf.app.flags.DEFINE_string('train_learning_rate', './DeHazeNetModel/trainLearningRate.json',
