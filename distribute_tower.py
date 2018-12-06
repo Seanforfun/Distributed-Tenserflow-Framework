@@ -14,13 +14,14 @@ import distribute_log as logger
 
 
 class Tower():
-    def __init__(self, net, scope, tower_grades, optimizer, raw_data, ground_truth, loss_fn):
+    def __init__(self, net, scope, tower_grades, tower_gradvars, tower_preds, raw_data, ground_truth, loss_fn):
         self.net = net
         self.scope = scope
         self.tower_grades = tower_grades
-        self.optimizer = optimizer
         self.raw_data = raw_data
         self.ground_truth = ground_truth
+        self.tower_gradvars = tower_gradvars
+        self.tower_preds = tower_preds
         self.loss_fn = loss_fn
 
     def tower_loss(self):
@@ -30,21 +31,19 @@ class Tower():
         # Calculate the loss for one tower of the net model. This function
         # constructs the entire net model but shares the variables across
         # all towers.
-        loss, logist = self.tower_loss()
+        logist = self.net.process(self.raw_data)
+        loss = self.__loss(logist)
+        tower_loss = tf.reduce_mean(loss)
 
         # Reuse variables for the next tower.
         tf.get_variable_scope().reuse_variables()
 
         # Retain the summaries from the final tower.
-        tf.trainable_variables()
-        summaries = tf.get_collection(tf.GraphKeys.SUMMARIES, self.scope)
+        model_params = tf.trainable_variables()
+        tower_loss += tf.add_n([tf.nn.l2_loss(v) for v in model_params])
 
-        # Calculate the gradients for the batch of data on this GMAN tower.
-        grads = self.get_gradient(loss)
-
-        # Keep track of the gradients across all towers.
-        self.tower_grades.append(grads)
-        return summaries, loss, logist
+        tower_grad = tf.gradients(tower_loss, model_params)
+        return loss, logist, zip(tower_grad, model_params)
 
     def __loss(self, result):
         """
@@ -63,9 +62,6 @@ class Tower():
         # The total loss is defined as the ms loss plus all of the weight
         # decay terms (L2 loss).
         return tf.add_n(tf.get_collection('losses'), name='total_loss')
-
-    def get_gradient(self, loss):
-        return self.optimizer.compute_gradients(loss)
 
     @staticmethod
     def average_gradients(tower_grads):
@@ -115,7 +111,7 @@ class Tower():
               Returns:
                  Tensor of shape [] containing the total loss for a batch of data
               """
-        # Put our hazed images into designed CNN and get a result image batch
+        # Put data into designed CNN and get a result image batch
         logist = self.net.process(self.raw_data)
         # logist = inference(hazed_batch)
         # Build the portion of the Graph calculating the losses. Note that we will

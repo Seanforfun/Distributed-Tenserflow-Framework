@@ -40,6 +40,10 @@ tf.app.flags.DEFINE_integer('gpu_num', 1,
                             """
                             The number of gpus used. Uses only CPU if set to 0.
                             """)
+tf.app.flags.DEFINE_integer('batch_per_epoch', 111111111111111,
+                            """
+                            The number of batch in one epoch.
+                            """)
 tf.app.flags.DEFINE_string('variable_strategy', 'CPU',
                            """
                            Where to locate variable operations
