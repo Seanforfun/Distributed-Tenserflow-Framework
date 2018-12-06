@@ -5,12 +5,32 @@
 #   add aspects for the forward processing.
 #  ====================================================
 
+import sys
+import inspect
+
 import distribute_log as logger
+import distribute_model as model
+
+def current_model(**kwds):
+    def decorate(f):
+        for k in kwds:
+            if k == 'net':
+                setattr(f, k, kwds[k])
+        return f
+    return decorate
 
 
+
+@current_model(net="distribute_model.Model")
 class Net(object):
-    def __init__(self, model):
-        self.model = model
+    def __init__(self, model = None):
+        if model is not None:
+            self.model = model
+        else:
+            model_classname = getattr(Net, 'net', 0)
+            model_class = getattr(model, model_classname)
+            self.model = model_class.__new__(model_class)
+        assert self.model is not None, "Please either create a model or use annotation @current_model"
 
     def inference(self, pre_proccessed_data):
         return self.model.inference(pre_proccessed_data)

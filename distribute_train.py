@@ -4,12 +4,14 @@
 #   Function: The training file is used to save the training process
 #  ====================================================
 
+import inspect
 import tensorflow as tf
 
 import distribute_log as logger
+import distribute_model as model
 
 
-def train():
+def train(self):
     """Returns an Experiment function.
 
     Experiments perform training on several workers in parallel,
