@@ -21,7 +21,7 @@ def current_model(**kwds):
 
 
 
-@current_model(net="distribute_model.Model")
+@current_model(net="Model")
 class Net(object):
     def __init__(self, model = None):
         if model is not None:

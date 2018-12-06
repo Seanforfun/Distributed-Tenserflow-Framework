@@ -10,7 +10,7 @@ import distribute_log as logger
 
 
 class LearningRate(object):
-    def __init__(self, initial_learning_rate, save_path, decay_factor):
+    def __init__(self, initial_learning_rate, save_path, decay_factor=None):
         self.path = save_path
         if os.path.exists(save_path):
             self.learning_rate = self.load()

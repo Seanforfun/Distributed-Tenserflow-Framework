@@ -7,21 +7,21 @@
 #   3. It will calculate the average gradient and update all models
 #  ====================================================
 import re
-import abc
 import tensorflow as tf
 
 import distribute_constants as constants
 import distribute_log as logger
 
 
-class Tower(metaclass=abc.ABCMeta):
-    def __init__(self, net, scope, tower_grades, optimizer, raw_data, ground_truth):
+class Tower():
+    def __init__(self, net, scope, tower_grades, optimizer, raw_data, ground_truth, loss_fn):
         self.net = net
         self.scope = scope
         self.tower_grades = tower_grades
         self.optimizer = optimizer
         self.raw_data = raw_data
         self.ground_truth = ground_truth
+        self.loss_fn = loss_fn
 
     def tower_loss(self):
         return Tower.__tower_loss(self)
@@ -30,12 +30,13 @@ class Tower(metaclass=abc.ABCMeta):
         # Calculate the loss for one tower of the net model. This function
         # constructs the entire net model but shares the variables across
         # all towers.
-        loss, _ = self.tower_loss()
+        loss, logist = self.tower_loss()
 
         # Reuse variables for the next tower.
         tf.get_variable_scope().reuse_variables()
 
         # Retain the summaries from the final tower.
+        tf.trainable_variables()
         summaries = tf.get_collection(tf.GraphKeys.SUMMARIES, self.scope)
 
         # Calculate the gradients for the batch of data on this GMAN tower.
@@ -43,9 +44,8 @@ class Tower(metaclass=abc.ABCMeta):
 
         # Keep track of the gradients across all towers.
         self.tower_grades.append(grads)
-        return summaries, loss
+        return summaries, loss, logist
 
-    @abc.abstractmethod
     def __loss(self, result):
         """
         We need to realize the method to implement our own loss
@@ -54,7 +54,7 @@ class Tower(metaclass=abc.ABCMeta):
         :param result: The result that we get from the model.
         :return: The loss value
         """
-        pass
+        return self.loss_fn(result, self.ground_truth)
 
     def loss_to_scope(self, result):
         loss = self.__loss(result)
@@ -134,6 +134,11 @@ class Tower(metaclass=abc.ABCMeta):
             loss_name = re.sub('%s_[0-9]*/' % constants.TOWER_NAME, '', l.op.name)
             tf.summary.scalar(loss_name, l)
         return total_loss, logist
+
+    @staticmethod
+    def tower_fn(tower):
+        return tower.process
+
 
 
 if __name__ == '__main__':

@@ -11,6 +11,8 @@ tf.app.flags.DEFINE_boolean('use_fp16', False,
                             """Train the model using fp16.""")
 
 # Distributed training options
+tf.app.flags.DEFINE_string('project_name', 'Your project name',
+                           """String to save the project name.""")
 tf.app.flags.DEFINE_string('ps_hosts', './DeHazeNetModel/trainLearningRate.json',
                            """Path to save training learning rate json file.""")
 tf.app.flags.DEFINE_string('worker_hosts', './DeHazeNetModel/trainLearningRate.json',
@@ -58,6 +60,11 @@ tf.app.flags.DEFINE_integer('input_image_width', 224,
                             """Input image width.""")
 tf.app.flags.DEFINE_integer('sample_number', 100000,
                             """Total sample numbers to train.""")
+tf.app.flags.DEFINE_float('train_learning_rate', 0.001,
+                            """Value of initail learning rate.""")
+tf.app.flags.DEFINE_string('learning_rate_json', 'YOUR LEARNING RATE SAVING PATH',
+                           """Path to save learning rate json file.""")
+
 
 # Training Input parameters
 tf.app.flags.DEFINE_string('data_dir', 'YOUR DATA PATH',
@@ -73,7 +80,7 @@ tf.app.flags.DEFINE_string('train_learning_rate', './DeHazeNetModel/trainLearnin
                            """Path to save training learning rate json file.""")
 
 # Model position
-tf.app.flags.DEFINE_string('model_position', '',
+tf.app.flags.DEFINE_string('model_dir', '',
                            """Path to save training model.""")
 
 

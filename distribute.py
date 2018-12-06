@@ -8,6 +8,7 @@ import os
 import tensorflow as tf
 
 import distribute_flags as flags
+import distribute_estimator as estimator
 import distribute_utils as utils
 import distribute_train as train
 import distribute_log as logger
@@ -23,6 +24,7 @@ def main(self):
     batch_size = flags.FLAGS.batch_size
     log_device_placement = flags.FLAGS.log_device_placement
     num_intra_threads = flags.FLAGS.intra_op_parallelism_threads
+    model_dir = flags.FLAGS.model_dir
 
     if gpu_num > 0:
         assert tf.test.is_gpu_available(), "Requested GPUs but none found."
@@ -43,10 +45,10 @@ def main(self):
         gpu_options=tf.GPUOptions(force_gpu_compatible=True))
 
     config = utils.RunConfig(
-        session_config=sess_config, model_dir=flags.FLAGS.model_position)
+        session_config=sess_config, model_dir=model_dir)
 
     tf.contrib.learn.learn_runner.run(
-        train.train(),
+        estimator.DistributeEstimator.get_experiment_fn(gpu_num, variable_strategy),
         run_config=config,
         hparams=tf.contrib.training.HParams(
             is_chief=config.is_chief))
