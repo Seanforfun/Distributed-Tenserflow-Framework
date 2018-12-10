@@ -14,36 +14,38 @@ import distribute_log as logger
 
 
 class Tower():
-    def __init__(self, net, scope, tower_grades, tower_gradvars, tower_preds, raw_data, ground_truth, loss_fn):
+    def __init__(self, net, scope, tower_grades, raw_data, ground_truth, loss_fn, optimizer):
         self.net = net
         self.scope = scope
         self.tower_grades = tower_grades
         self.raw_data = raw_data
         self.ground_truth = ground_truth
-        self.tower_gradvars = tower_gradvars
-        self.tower_preds = tower_preds
         self.loss_fn = loss_fn
+        self.optimizer = optimizer
+
+    def get_gradient(self, loss):
+        return self.optimizer.compute_gradients(loss)
 
     def tower_loss(self):
-        return Tower.__tower_loss(self)
+        return self.__tower_loss()
 
     def process(self):
         # Calculate the loss for one tower of the net model. This function
         # constructs the entire net model but shares the variables across
         # all towers.
-        logist = self.net.process(self.raw_data)
-        loss = self.__loss(logist)
-        tower_loss = tf.reduce_mean(loss)
-
+        loss, _ = self.tower_loss()
         # Reuse variables for the next tower.
         tf.get_variable_scope().reuse_variables()
 
         # Retain the summaries from the final tower.
-        model_params = tf.trainable_variables()
-        tower_loss += tf.add_n([tf.nn.l2_loss(v) for v in model_params])
+        summaries = tf.get_collection(tf.GraphKeys.SUMMARIES, self.scope)
 
-        tower_grad = tf.gradients(tower_loss, model_params)
-        return loss, logist, zip(tower_grad, model_params)
+        # Calculate the gradients for the batch of data on this GMAN tower.
+        grads = self.get_gradient(loss)
+
+        # Keep track of the gradients across all towers.
+        self.tower_grades.append(grads)
+        return summaries, loss
 
     def __loss(self, result):
         """
@@ -116,7 +118,7 @@ class Tower():
         # logist = inference(hazed_batch)
         # Build the portion of the Graph calculating the losses. Note that we will
         # assemble the total_loss using a custom function below.
-        _ = Tower.__loss(self, logist)
+        _ = Tower.loss_to_scope(self, logist)
         # Assemble all of the losses for the current tower only.
         losses = tf.get_collection('losses', self.scope)
         # Calculate the total loss for the current tower.
@@ -133,7 +135,7 @@ class Tower():
 
     @staticmethod
     def tower_fn(tower):
-        return tower.process
+        return tower.process()
 
 
 

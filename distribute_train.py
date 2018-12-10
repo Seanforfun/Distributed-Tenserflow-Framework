@@ -4,25 +4,28 @@
 #   Function: The training file is used to save the training process
 #  ====================================================
 
-import itertools
+import multiprocessing
 
-import six
 import tensorflow as tf
 
 import distribute_constants as constant
 import distribute_flags as flags
-import distribute_learningrate as learning_rate
 import distribute_net as net
 import distribute_tower as tower
 import distribute_utils as utils
 from distribute_loss import Loss
-from distribute_tower import Tower
 
 
 class Train():
     @staticmethod
+    def __create_done_queue(num_workers):
+        with tf.device("/job:ps/task:0"):
+            return tf.FIFOQueue(num_workers, tf.int32, shared_name="done_queue0")
+
+    @staticmethod
     def get_train_fn(gpu_num, variable_strategy, num_workers, params):
         def _get_train_fn(raw_data, ground_truth, mode, params):
+            cpu_num = multiprocessing.cpu_count()
             if gpu_num == 0:
                 num_devices = 1
                 device_type = 'cpu'
@@ -30,95 +33,78 @@ class Train():
                 num_devices = gpu_num
                 device_type = 'gpu'
 
-            tower_losses = []
-            tower_gradvars = []
-            tower_preds = []
-            for i in range(num_devices):
-                worker_device = '/{}:{}'.format(device_type, i)
-                if variable_strategy == 'CPU':
-                    device_setter = utils.local_device_setter(
-                        worker_device=worker_device)
-                elif variable_strategy == 'GPU':
-                    device_setter = utils.local_device_setter(
-                        ps_device_type='gpu',
-                        worker_device=worker_device,
-                        ps_strategy=tf.contrib.training.GreedyLoadBalancingStrategy(
-                            gpu_num, tf.contrib.training.byte_size_load_fn))
-                with tf.variable_scope(flags.FLAGS.project_name, reuse=bool(i != 0)):
-                    with tf.name_scope('%s_%d' % (constant.TOWER_NAME, i)) as scope:
-                        with tf.device(device_setter):
-                            current_net = net.Net()
-                            current_tower = tower.Tower(current_net, scope, tower_losses, tower_gradvars, tower_preds, raw_data, ground_truth, Loss.loss_fn)
-                            loss, logist, gradvars = Tower.tower_fn(current_tower)
-                            tower_losses.append(loss)
-                            tower_gradvars.append(gradvars)
-                            tower_preds.append(logist)
-                            if i == 0:
-                                # Only trigger batch_norm moving mean and variance update from
-                                # the 1st tower. Ideally, we should grab the updates from all
-                                # towers but these stats accumulate extremely fast so we can
-                                # ignore the other stats from the other towers without
-                                # significant detriment.
-                                update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS,
-                                                               scope)
+            ps_spec = flags.FLAGS.ps_hosts.split(",")
+            worker_spec = flags.FLAGS.worker_hosts.split(",")
+            num_workers = len(worker_spec)
+            cluster = tf.train.ClusterSpec({
+                "ps": ps_spec,
+                "worker": worker_spec})
 
-                # Now compute global loss and gradients.
-                gradvars = []
-                with tf.name_scope('gradient_averaging'):
-                    all_grads = {}
-                    for grad, var in itertools.chain(*tower_gradvars):
-                        if grad is not None:
-                            all_grads.setdefault(var, []).append(grad)
-                    for var, grads in six.iteritems(all_grads):
-                        # Average gradients on the same device as the variables
-                        # to which they apply.
-                        with tf.device(var.device):
-                            if len(grads) == 1:
-                                avg_grad = grads[0]
-                            else:
-                                avg_grad = tf.multiply(tf.add_n(grads), 1. / len(grads))
-                        gradvars.append((avg_grad, var))
+            kill_ps_queue = Train.__create_done_queue(num_workers)
 
-                # Device that runs the ops to apply global gradient updates.
-                consolidation_device = '/gpu:0' if variable_strategy == 'GPU' else '/cpu:0'
-                with tf.device(consolidation_device):
-                    lr = constant.INITIAL_LEARNING_RATE
-                    loss = tf.reduce_mean(tower_losses, name='loss')
-                    examples_sec_hook = utils.ExamplesPerSecondHook(
-                        flags.FLAGS.batch_size, every_n_steps=10)
+            server = tf.train.Server(cluster, job_name=flags.FLAGS.job_name, task_index=flags.FLAGS.task_index)
+            # ####################################################################################
+            # #################################Parameter Server#####################################
+            # ####################################################################################
+            if flags.FLAGS.job_name == "ps":
+                with tf.Session(server.target) as sess:
+                    for i in range(num_workers):
+                        sess.run(kill_ps_queue.dequeue())
+                return
 
-                    tensors_to_log = {'learning_rate': learning_rate, 'loss': loss}
+            # ####################################################################################
+            # #################################Worker Service######################################
+            # ####################################################################################
+            is_chief = (flags.FLAGS.task_index == 0)
+            worker_device = "/job:worker/task:%d" % flags.FLAGS.task_index
+            ps_device = "/job:ps/cpu:0"
+            for i in range(1, cpu_num):
+                ps_device += ", /job:ps/cpu: %d" % i
+            with tf.device(tf.train.replica_device_setter(worker_device=worker_device, ps_device=ps_device,
+                                                          cluster=cluster)):
+                global_step = tf.get_variable('global_step', [], initializer=tf.constant_initializer(0),
+                                              trainable=False)
+                tower_grads = []
+                tower_losses = []
+                optimizer = tf.train.AdamOptimizer(constant.INITIAL_LEARNING_RATE)
+                with tf.variable_scope(tf.get_variable_scope()):
+                    for i in range(num_devices):
+                        with tf.device('/%s:%d' % (device_type, i)):
+                            with tf.name_scope('%s_%d' % (constant.TOWER_NAME, i)) as scope:
+                                current_net = net.Net()
+                                current_tower = tower.Tower(current_net, scope, tower_grads, raw_data, ground_truth, Loss.loss_fn, optimizer)
+                                summaries, loss = current_tower.process()
+                                tower_losses.append(loss)
 
-                    logging_hook = tf.train.LoggingTensorHook(
-                        tensors=tensors_to_log, every_n_iter=100)
-                    train_hooks = [logging_hook, examples_sec_hook]
+                # We must calculate the mean of each gradient. Note that this is the
+                # synchronization point across all towers.
+                grads = tower.Tower.average_gradients(tower_grads)
 
-                    optimizer = tf.train.AdamOptimizer(lr)
+                loss = tf.reduce_mean(tower_losses, name='loss')
+                examples_sec_hook = utils.ExamplesPerSecondHook(
+                    flags.FLAGS.batch_size, every_n_steps=10)
+                tensors_to_log = {'loss': loss}
+                logging_hook = tf.train.LoggingTensorHook(
+                    tensors=tensors_to_log, every_n_iter=100)
+                train_hooks = [logging_hook, examples_sec_hook]
 
-                    if flags.FLAGS.sync:
-                        optimizer = tf.train.SyncReplicasOptimizer(
-                            optimizer, replicas_to_aggregate=num_workers)
-                        sync_replicas_hook = optimizer.make_session_run_hook(params.is_chief)
-                        train_hooks.append(sync_replicas_hook)
+                optimizer = tf.train.SyncReplicasOptimizer(
+                    optimizer, use_locking=False,
+                    replicas_to_aggregate=num_workers,
+                    total_num_replicas=num_workers,
+                    name="sync_replicas")
+                sync_replicas_hook = optimizer.make_session_run_hook(is_chief)
+                train_hooks.append(sync_replicas_hook)
 
-                    # Create single grouped train op
-                    train_op = [
-                        optimizer.apply_gradients(
-                            gradvars, global_step=tf.train.get_global_step())
-                    ]
-                    train_op.extend(update_ops)
-                    train_op = tf.group(*train_op)
+                # Apply the gradients to adjust the shared variables
+                train_op = optimizer.apply_gradients(grads, global_step=global_step)
+                train_op = tf.group(*train_op)
 
-                    predictions = {
-                        # Create your data format using logist
-                    }
-
-                    return tf.estimator.EstimatorSpec(
-                        mode="train",
-                        predictions=predictions,
-                        loss=loss,
-                        train_op=train_op,
-                        training_hooks=train_hooks)
+                return tf.estimator.EstimatorSpec(
+                    mode="train",
+                    loss=loss,
+                    train_op=train_op,
+                    training_hooks=train_hooks)
 
         return _get_train_fn
 

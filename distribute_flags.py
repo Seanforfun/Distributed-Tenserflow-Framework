@@ -13,10 +13,18 @@ tf.app.flags.DEFINE_boolean('use_fp16', False,
 # Distributed training options
 tf.app.flags.DEFINE_string('project_name', 'Your project name',
                            """String to save the project name.""")
+tf.app.flags.DEFINE_string('job_name', '',
+                           """One of ps and worker""")
 tf.app.flags.DEFINE_string('ps_hosts', '',
                            """The hosts that runs as parameter server.""")
 tf.app.flags.DEFINE_string('worker_hosts', '',
                            """The hosts that works as workers who are responsible for processing.""")
+tf.app.flags.DEFINE_integer("task_index", None,
+                            "Worker task index, should be >= 0. task_index=0 is "
+                            "the master worker task the performs the variable "
+                            "initialization ")
+
+
 tf.app.flags.DEFINE_integer('intra_op_parallelism_threads ', 0,
                             """
                               Number of threads to use for intra-op parallelism. When training on CPU
@@ -46,9 +54,9 @@ tf.app.flags.DEFINE_integer('batch_per_epoch', 111111111111111,
                             """)
 tf.app.flags.DEFINE_string('variable_strategy', 'CPU',
                            """
-                           Where to locate variable operations
-                           CPU: locate variables on CPU
-                           GPU: locate variables on GPU
+                           Where to locate variable operations.
+                           CPU: locate variables on CPU, CPU is like the parameter server.
+                           GPU: locate variables on GPU, GPU is like the parameter server.
                            """)
 tf.app.flags.DEFINE_boolean('log_device_placement', False,
                            """
