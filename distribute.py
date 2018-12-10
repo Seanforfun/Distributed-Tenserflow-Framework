@@ -5,13 +5,13 @@
 #   We run the training program by calling this file.
 #  ====================================================
 import os
+
 import tensorflow as tf
 
-import distribute_flags as flags
 import distribute_estimator as estimator
+import distribute_flags as flags
 import distribute_utils as utils
-import distribute_train as train
-import distribute_log as logger
+import distribute_experiment as experiment
 
 
 def main(self):
@@ -48,7 +48,7 @@ def main(self):
         session_config=sess_config, model_dir=model_dir)
 
     tf.contrib.learn.learn_runner.run(
-        estimator.DistributeEstimator.get_experiment_fn(gpu_num, variable_strategy),
+        experiment.DistributeExperiment.get_experiment_fn(gpu_num, variable_strategy),
         run_config=config,
         hparams=tf.contrib.training.HParams(
             is_chief=config.is_chief))

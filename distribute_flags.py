@@ -13,10 +13,10 @@ tf.app.flags.DEFINE_boolean('use_fp16', False,
 # Distributed training options
 tf.app.flags.DEFINE_string('project_name', 'Your project name',
                            """String to save the project name.""")
-tf.app.flags.DEFINE_string('ps_hosts', './DeHazeNetModel/trainLearningRate.json',
-                           """Path to save training learning rate json file.""")
-tf.app.flags.DEFINE_string('worker_hosts', './DeHazeNetModel/trainLearningRate.json',
-                           """Path to save training learning rate json file.""")
+tf.app.flags.DEFINE_string('ps_hosts', '',
+                           """The hosts that runs as parameter server.""")
+tf.app.flags.DEFINE_string('worker_hosts', '',
+                           """The hosts that works as workers who are responsible for processing.""")
 tf.app.flags.DEFINE_integer('intra_op_parallelism_threads ', 0,
                             """
                               Number of threads to use for intra-op parallelism. When training on CPU
@@ -78,6 +78,14 @@ tf.app.flags.DEFINE_integer('data_load_option', 1,
                             1: Using tf-record to load data(Preferred).
                             2: Use placeholder to create data.
                             """)
+
+# Evaluation Input parameters
+tf.app.flags.DEFINE_integer('eval_example_num', 10000,
+                            """Number of evaluation examples.""")
+tf.app.flags.DEFINE_string('eval_data_dir', 'YOUR EVALUATION DATA PATH',
+                           """Path to save evaluation data.""")
+tf.app.flags.DEFINE_integer('eval_batch_size', 1,
+                            """Size of your evaluation batch, normally should be 1.""")
 
 # Files position
 tf.app.flags.DEFINE_string('train_learning_rate', './DeHazeNetModel/trainLearningRate.json',

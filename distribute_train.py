@@ -4,19 +4,17 @@
 #   Function: The training file is used to save the training process
 #  ====================================================
 
-import six
 import itertools
-import inspect
+
+import six
 import tensorflow as tf
 
-import distribute_flags as flags
-import distribute_log as logger
-import distribute_utils as utils
-import distribute_model as model
-import distribute_tower as tower
-import distribute_net as net
-import distribute_learningrate as learning_rate
 import distribute_constants as constant
+import distribute_flags as flags
+import distribute_learningrate as learning_rate
+import distribute_net as net
+import distribute_tower as tower
+import distribute_utils as utils
 from distribute_loss import Loss
 from distribute_tower import Tower
 

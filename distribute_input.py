@@ -5,16 +5,52 @@
 #   system.
 #  ====================================================
 import abc
+import tensorflow as tf
 
 
 class Input(metaclass=abc.ABCMeta):
     @staticmethod
     @abc.abstractmethod
-    def load_data(data_dir, batch_size, gpu_num):
+    def load_train_batch(data_dir, batch_size, gpu_num):
         """
-        Users need to implement this method to get input and groundtruth
-        data_dir: Please to load data, can be a string or tuple.
-        :return: raw_data
-        :return: ground_truth
+        Users need to implement this method to get input and ground truth.
+        data_dir: Place to load data, can be either a string or a tuple contains multiple paths.
+        :param data_dir: Path to load data, can be either a string or a tuple saving multiple paths.
+        :param batch_size: size of data in one batch.
+        :param gpu_num: Number of gpu used for training
+        :return: raw_data batch
+        :return: ground_truth batch
         """
         pass
+
+    @staticmethod
+    @abc.abstractmethod
+    def load_eval_batch(data_dir, batch_size, gpu_num):
+        """
+        Abstract method of loading evaluation batch, user must implement this function and return
+        raw data and ground truth from the data paths.
+        :param data_dir: Path to load data, can be either a string or a tuple saving multiple paths.
+        :param batch_size: size of data in one batch.
+        :param gpu_num: Number of gou used for evaluation, 0 means working on cpu
+        :return: raw_data batch
+        :return: ground_truth (Optional) Ground truth batch.
+        """
+        pass
+
+    @staticmethod
+    def _generate_image_batch(example_list, min_queue_examples, batch_size, num_thread, shuffle=True):
+        if shuffle:
+            examples = tf.train.shuffle_batch(
+                example_list,
+                batch_size=batch_size,
+                num_threads=num_thread,
+                capacity=min_queue_examples + 3 * batch_size,
+                min_after_dequeue=min_queue_examples)
+        else:
+            examples = tf.train.batch(
+                example_list,
+                batch_size=batch_size,
+                num_threads=num_thread.NUMBER_PREPROCESS_THREADS,
+                capacity=min_queue_examples + 3 * batch_size
+            )
+        return examples
