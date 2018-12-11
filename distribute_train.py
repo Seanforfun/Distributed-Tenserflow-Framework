@@ -98,6 +98,8 @@ class Train(object):
 
         if input_mode == Input.InputOptions.TF_RECORD:
             batch_queue = train_dataloader.load_queue_from_tfrecord(train_data_dir, batch_size)
+        else:
+            sample_path_queue = train_dataloader.load_queue_for_placeholder(train_data_dir)
 
         # ####################################################################################
         # #############################Training Function ########################################
@@ -118,7 +120,7 @@ class Train(object):
                                 if input_mode == Input.InputOptions.TF_RECORD:
                                     raw_data, ground_truth = train_dataloader.load_train_batch(train_data_dir, batch_size, batch_queue=batch_queue)
                                 else:
-                                    raw_data, ground_truth = train_dataloader.load_train_batch
+                                    raw_data, ground_truth = train_dataloader.load_train_batch(train_data_dir, batch_size)
                                 if pre_process_fn is not None:
                                         raw_data, ground_truth = pre_train_fn(raw_data, ground_truth, args, kwargs)
                                 current_tower = tower.Tower(current_net, scope, tower_grads, raw_data, ground_truth, Loss.loss_fn, optimizer)
@@ -174,9 +176,14 @@ class Train(object):
                 supervisor.start_queue_runners(sess, [chief_queue_runner])
                 sess.run(sync_init_op)
 
-            start = time.time()
             while not supervisor.should_stop():
-                _, step, loss_value = sess.run([train_op, global_step, loss])
+                start = time.time()
+                if input_mode == Input.InputOptions.TF_RECORD:
+                    _, step, loss_value = sess.run([train_op, global_step, loss])
+                else:
+                    raw_data_batch, ground_truth_batch = train_dataloader.load_placeholder_data(batch_size, sample_path_queue)
+                    # Using placeholder
+                    _, step, loss_value = sess.run([train_op, global_step, loss], feed_dict={raw_data: raw_data_batch, ground_truth: ground_truth_batch})
                 duration = time.time() - start
 
                 if step % 10 == 0:

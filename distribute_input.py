@@ -4,9 +4,11 @@
 #   Function: This file contains the input module of the distributed
 #   system.
 #  ====================================================
+import os
 import abc
 import multiprocessing
 from enum import Enum
+import queue
 
 import tensorflow as tf
 
@@ -102,7 +104,11 @@ class TFRecordDataLoader(Dataloader, metaclass=abc.ABCMeta):
         example_list = self.__decode_raw_data(raw_features, height, width, args, kwargs)
         min_queue_examples = int(flags.FLAGS.batch_per_epoch * batch_size *
                                  constants.MIN_FRACTION_OF_EXAMPLE_IN_QUEUE)
-        batch_data =  Dataloader._generate_image_batch(example_list, min_queue_examples, batch_size, multiprocessing.cpu_count() * 2,  shuffle=False)
+        batch_data = Dataloader._generate_image_batch(example_list,
+                                                      min_queue_examples,
+                                                      batch_size,
+                                                      multiprocessing.cpu_count() * 2,
+                                                      shuffle=False)
         return tf.contrib.slim.prefetch_queue.prefetch_queue(list(batch_data), capacity=2 * flags.FLAGS.gpu_num)
 
 
@@ -112,6 +118,11 @@ class PlaceholderDataLoader(Dataloader, metaclass=abc.ABCMeta):
 
     def load_eval_batch(self, data_dir, batch_size, *args, **kwargs):
         pass
+
+    def load_queue_for_placeholder(self, data_dir, *args, **kwargs):
+        batch_queue = queue.Queue()
+        self.__put_names_dict_into_queue(data_dir, batch_queue)
+        return batch_queue
 
     @abc.abstractmethod
     def __create_placeholder(self, data_dir, batch_size, *args, **kwargs):
@@ -124,3 +135,35 @@ class PlaceholderDataLoader(Dataloader, metaclass=abc.ABCMeta):
         :return: return placeholders
         """
         pass
+
+    @abc.abstractmethod
+    def __put_names_dict_into_queue(self, data_dir, queue):
+        """
+        Users must implement this method so that all datas path are arranged as dictionary
+        and save into the queue.
+        :param data_dir: dict or any data format so we have all data path.
+        :param queue: queue to insert the samples.
+        """
+        pass
+
+    @abc.abstractmethod
+    def decode_data_from_path_name(self, paths):
+        """
+        We get the sample name queue at the very begining, now we get the data
+        from the path and return them so program can generate a queue.
+        :param paths: paths of the data to read from.
+        :return: data Dict, two items {'raw_data': [], 'ground_truth': []}
+        """
+        pass
+
+    def load_placeholder_data(self, batch_size, sample_path_queue, *args, **kwargs):
+        raw_batch = []
+        ground_truth_batch = []
+        for i in range(batch_size):
+            paths = sample_path_queue.get()
+            data = self.decode_data_from_path_name(paths)
+            raw_batch.append(data['raw_data'])
+            ground_truth_batch.append(data['ground_truth'])
+            sample_path_queue.put(paths)
+        return raw_batch, ground_truth_batch
+
