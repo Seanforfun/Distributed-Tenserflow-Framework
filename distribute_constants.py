@@ -16,6 +16,9 @@ TOWER_NAME = 'tower'
 # Training
 INITIAL_LEARNING_RATE = flags.FLAGS.train_learning_rate
 
+# Input
+MIN_FRACTION_OF_EXAMPLE_IN_QUEUE = 0.05
+
 
 if __name__ == '__main__':
     pass

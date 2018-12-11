@@ -26,14 +26,23 @@ class Tower():
     def get_gradient(self, loss):
         return self.optimizer.compute_gradients(loss)
 
-    def tower_loss(self):
-        return self.__tower_loss()
+    def tower_loss(self, post_process_fn=None, *args, **kwargs):
+        return self.__tower_loss(post_process_fn, args, kwargs)
 
-    def process(self):
-        # Calculate the loss for one tower of the net model. This function
-        # constructs the entire net model but shares the variables across
-        # all towers.
-        loss, _ = self.tower_loss()
+    def process(self, post_process_fn=None,  *args, **kwargs):
+        """
+        Calculate the loss for one tower of the net model. This function
+        constructs the entire net model but shares the variables across
+        all towers.
+        :param post_process_fn: (Optional) A function handler to do post process to the direct result from the net.
+        This function will help user to do their own loss calculation besides some basic operations.
+        :param args: (Optional) Parameter for net pre-process
+        :param kwargs: (Optional) Dictionary for net post-process
+        :return: summary
+        :return: loss
+        :return: logist result from the network, might be post processed by post_process_fn
+        """
+        loss, logist = self.tower_loss(post_process_fn, args, kwargs)
         # Reuse variables for the next tower.
         tf.get_variable_scope().reuse_variables()
 
@@ -45,7 +54,7 @@ class Tower():
 
         # Keep track of the gradients across all towers.
         self.tower_grades.append(grads)
-        return summaries, loss
+        return summaries, loss, logist
 
     def __loss(self, result):
         """
@@ -103,19 +112,19 @@ class Tower():
             average_grads.append(grad_and_var)
         return average_grads
 
-    def __tower_loss(self):
-        """Calculate the total loss on a single tower running the DeHazeNet model.
-
-              Args:
-                scope: unique prefix string identifying the net tower, e.g. 'tower_0'
-                images: Images. 3D tensor of shape [height, width, 3].
-
-              Returns:
-                 Tensor of shape [] containing the total loss for a batch of data
-              """
-        # Put data into designed CNN and get a result image batch
-        logist = self.net.process(self.raw_data)
-        # logist = inference(hazed_batch)
+    def __tower_loss(self, post_process_fn=None, *args, **kwargs):
+        """
+        Private function to calculate the tower loss.
+        Not call this function directly.
+        :param post_process_fn:
+        :param kwargs:
+        :return: total loss for current tower.
+        :return:  The result from the net, might be post processed by handler post_process_fn.
+        """
+        logist = self.net.process(self.raw_data, args, kwargs)
+        if post_process_fn is not None:
+            # Currently, our result has been modified for doing loss calculation.
+            logist = post_process_fn(logist)
         # Build the portion of the Graph calculating the losses. Note that we will
         # assemble the total_loss using a custom function below.
         _ = Tower.loss_to_scope(self, logist)

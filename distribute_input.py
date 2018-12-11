@@ -5,33 +5,44 @@
 #   system.
 #  ====================================================
 import abc
+import multiprocessing
+from enum import Enum
+
 import tensorflow as tf
 
+import distribute_flags as flags
+import distribute_constants as constants
 
-class Input(metaclass=abc.ABCMeta):
-    @staticmethod
+
+class InputOptions(Enum):
+    TF_RECORD = 0
+    PLACEHOLDER = 1
+
+
+class Dataloader(metaclass=abc.ABCMeta):
     @abc.abstractmethod
-    def load_train_batch(data_dir, batch_size, param):
+    def load_train_batch(self, data_dir, batch_size, *args, **kwargs):
         """
         Users need to implement this method to get input and ground truth.
         data_dir: Place to load data, can be either a string or a tuple contains multiple paths.
         :param data_dir: Path to load data, can be either a string or a tuple saving multiple paths.
         :param batch_size: size of data in one batch.
-        :param param (Optional) for user extension
+        :param args: (Optional) Additional parameters for training.
+        :param kwargs: (Optional) Additional dict for training.
         :return: raw_data batch
         :return: ground_truth batch
         """
         pass
 
-    @staticmethod
     @abc.abstractmethod
-    def load_eval_batch(data_dir, batch_size, param):
+    def load_eval_batch(self, data_dir, batch_size, *args, **kwargs):
         """
         Abstract method of loading evaluation batch, user must implement this function and return
         raw data and ground truth from the data paths.
         :param data_dir: Path to load data, can be either a string or a tuple saving multiple paths.
         :param batch_size: size of data in one batch.
-        :param param (Optional) for user extension
+        :param args: (Optional) Additional parameters for evaluation.
+        :param kwargs: (Optional) Additional dict for evaluation.
         :return: raw_data batch in list
         :return: ground_truth (Optional)in list, Ground truth batch.
         """
@@ -54,3 +65,62 @@ class Input(metaclass=abc.ABCMeta):
                 capacity=min_queue_examples + 3 * batch_size
             )
         return examples
+
+
+class TFRecordDataLoader(Dataloader, metaclass=abc.ABCMeta):
+    def __init__(self, features):
+        self.features = features
+
+    def load_train_batch(self, data_dir, batch_size, *args, **kwargs):
+        queue = kwargs["batch_queue"]
+        if queue is None:
+            raise RuntimeError("Cannot find get the queue from tf-record.")
+        return queue.dequeue()
+
+    def load_eval_batch(self, data_dir, batch_size, *args, **kwargs):
+        pass
+
+    @abc.abstractmethod
+    def __decode_raw_data(self, raw_features, height, width, *args, **kwargs):
+        """
+        :param raw_features: raw examples retrieved from tf-record file
+        :return: sample list [raw data, grounp truth]
+        """
+        pass
+
+    def load_queue_from_tfrecord(self, data_dir, batch_size, *args, **kwargs):
+        height = flags.FLAGS.input_image_height
+        width = flags.FLAGS.input_image_width
+        if not tf.gfile.Exists(data_dir):
+            raise ValueError("Fail to load TFRecord from directory: " + data_dir)
+        filename_queue = tf.train.string_input_producer([data_dir])
+        reader = tf.TFRecordReader()
+        _, serialized_example = reader.read(filename_queue)
+        raw_features = tf.parse_single_example(
+            serialized_example,
+            self.features)
+        example_list = self.__decode_raw_data(raw_features, height, width, args, kwargs)
+        min_queue_examples = int(flags.FLAGS.batch_per_epoch * batch_size *
+                                 constants.MIN_FRACTION_OF_EXAMPLE_IN_QUEUE)
+        batch_data =  Dataloader._generate_image_batch(example_list, min_queue_examples, batch_size, multiprocessing.cpu_count() * 2,  shuffle=False)
+        return tf.contrib.slim.prefetch_queue.prefetch_queue(list(batch_data), capacity=2 * flags.FLAGS.gpu_num)
+
+
+class PlaceholderDataLoader(Dataloader, metaclass=abc.ABCMeta):
+    def load_train_batch(self, data_dir, batch_size, *args, **kwargs):
+        return self.__create_placeholder(data_dir, batch_size, args, kwargs)
+
+    def load_eval_batch(self, data_dir, batch_size, *args, **kwargs):
+        pass
+
+    @abc.abstractmethod
+    def __create_placeholder(self, data_dir, batch_size, *args, **kwargs):
+        """
+        User must implement this method and return the placeholder
+        :param data_dir: place to load data.
+        :param batch_size: Number of sample in one batch.
+        :param args: (Optional) User's parameter. Save height, width etc.
+        :param kwargs: (Optional) User's dict. Save height, width etc.
+        :return: return placeholders
+        """
+        pass

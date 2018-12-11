@@ -92,10 +92,11 @@ tf.app.flags.DEFINE_string('learning_rate_json', 'YOUR LEARNING RATE SAVING PATH
 # Training Input parameters
 tf.app.flags.DEFINE_string('data_dir', 'YOUR DATA PATH',
                            """Path to save data.""")
-tf.app.flags.DEFINE_integer('data_load_option', 1,
-                            """
-                            1: Using tf-record to load data(Preferred).
-                            2: Use placeholder to create data.
+tf.app.flags.DEFINE_string('data_load_option', "tfrecords",
+                           """
+                            Select from either 'tfrecords' or 'placeholder'
+                            'tfrecords': Using tf-record to load data(Preferred).
+                            'placeholder': Use placeholder to create data.
                             """)
 
 # Evaluation Input parameters

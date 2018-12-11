@@ -30,17 +30,17 @@ class Net(object):
         return self.model.inference(pre_proccessed_data)
 
     @staticmethod
-    def pre_process(input_data):
+    def pre_process(input_data, *args, **kwargs):
         return input_data
 
     @staticmethod
-    def post_process(result):
+    def post_process(result, *args, **kwargs):
         return result
 
-    def process(self, input_data):
-        pre_processed_data = Net.pre_process(input_data)
+    def process(self, input_data, *args, **kwargs):
+        pre_processed_data = Net.pre_process(input_data, args, kwargs)
         result = self.inference(pre_processed_data)
-        return Net.post_process(result)
+        return Net.post_process(result, args, kwargs)
 
 
 if __name__ == '__main__':

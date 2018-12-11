@@ -4,18 +4,19 @@
 #   Function: The training file is used to save the training process
 #  ====================================================
 
-import time
 import multiprocessing
+import time
 
 import tensorflow as tf
 
 import distribute_constants as constant
 import distribute_flags as flags
+import distribute_log as logger
 import distribute_net as net
 import distribute_tower as tower
-import distribute_utils as utils
 from distribute_loss import Loss
-import distribute_log as logger
+import distribute_input as Input
+from distribute_input import Dataloader
 
 
 class Train(object):
@@ -25,7 +26,25 @@ class Train(object):
             return tf.FIFOQueue(num_workers, tf.int32, shared_name="done_queue0")
 
     @staticmethod
-    def train(train_input_fn, pre_train_fn=None, post_train_fn=None, param=None):
+    def train(train_dataloader,
+              input_mode,
+              pre_train_fn=None,
+              post_train_fn=None,
+              pre_process_fn=None,
+              post_process_fn=None,
+              *args,
+              **kwargs):
+        """
+        :param train_dataloader: A data loader used to get the data from data_dir.
+        :param input_mode: One of using tf-records and placeholder. Please specify in distribute_flags.py or command.
+        :param pre_train_fn: (Optional) A handler of pre train process.
+        :param post_train_fn: (Optional) A handler of post train process.
+        :param pre_process_fn: (Optional) A handler of process raw data and ground truth before pass them to the net.
+        :param post_process_fn: (Optional) A handler of post the direct result from the net(before calculating loss)
+        :param args: (Optional) User's additional parameters.
+        :param kwargs: (Optional) User's additional dict.
+        :return:
+        """
         # ####################################################################
         # #####################Parameters Loading###############################
         # ####################################################################
@@ -70,22 +89,42 @@ class Train(object):
         for i in range(1, cpu_num):
             ps_device += ", /job:ps/cpu: %d" % i
 
+        # ####################################################################################
+        # #############################Pre Train Function ########################################
+        # ####################################################################################
+        pre_train_result = None
+        if pre_train_fn is not None:
+            pre_train_result = pre_train_fn(args, kwargs)
+
+        if input_mode == Input.InputOptions.TF_RECORD:
+            batch_queue = train_dataloader.load_queue_from_tfrecord(train_data_dir, batch_size)
+
+        # ####################################################################################
+        # #############################Training Function ########################################
+        # ####################################################################################
         with tf.device(tf.train.replica_device_setter(worker_device=worker_device, ps_device=ps_device,
                                                           cluster=cluster)):
             global_step = tf.get_variable('global_step', [], initializer=tf.constant_initializer(0),
                                               trainable=False)
             tower_grads = []
             tower_losses = []
+            tower_logist = []
             optimizer = tf.train.AdamOptimizer(constant.INITIAL_LEARNING_RATE)
             with tf.variable_scope(tf.get_variable_scope()):
                     for i in range(num_devices):
                         with tf.device('/%s:%d' % (device_type, i)):
                             with tf.name_scope('%s_%d' % (constant.TOWER_NAME, i)) as scope:
                                 current_net = net.Net()
-                                raw_data, ground_truth = train_input_fn(train_data_dir, batch_size)
+                                if input_mode == Input.InputOptions.TF_RECORD:
+                                    raw_data, ground_truth = train_dataloader.load_train_batch(train_data_dir, batch_size, batch_queue=batch_queue)
+                                else:
+                                    raw_data, ground_truth = train_dataloader.load_train_batch
+                                if pre_process_fn is not None:
+                                        raw_data, ground_truth = pre_train_fn(raw_data, ground_truth, args, kwargs)
                                 current_tower = tower.Tower(current_net, scope, tower_grads, raw_data, ground_truth, Loss.loss_fn, optimizer)
-                                summaries, loss = current_tower.process()
+                                summaries, loss, logist = current_tower.process(post_process_fn, pre_train_result)
                                 tower_losses.append(loss)
+                                tower_logist.append(logist)
 
             # We must calculate the mean of each gradient. Note that this is the
             # synchronization point across all towers.
@@ -116,8 +155,8 @@ class Train(object):
             supervisor = tf.train.MonitoredTrainingSession(
                 is_chief=is_chief,
                 checkpoint_dir=model_dir,
-                save_checkpoint_steps=1000,
-                scaffold=tf.train.Scaffold(init_op)
+                scaffold=tf.train.Scaffold(init_op),
+                log_step_count_steps=1000
             )
 
             sess_config = tf.ConfigProto(
@@ -152,6 +191,12 @@ class Train(object):
             sess.run(kill_ps_enqueue_op)
             logger.info('kill_ps_enqueue_op done....')
             supervisor.stop()
+
+        # ####################################################################################
+        # #############################Post Train Function #######################################
+        # ####################################################################################
+        if post_train_fn is not None:
+            post_train_fn(args, kwargs)
 
 
 if __name__ == '__main__':
