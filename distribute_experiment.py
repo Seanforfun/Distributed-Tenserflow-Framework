@@ -62,7 +62,14 @@ class DistributeExperiment(object):
     def train(self, pre_train_fn=None, post_train_fn=None, param=None):
         self.train_fn(self.train_input_fn, pre_train_fn, post_train_fn, param)
 
+    def evaluation(self, pre_eval_fn=None, post_evaluation_fn=None, param=None):
+        self.eval_fn(self.eval_input_fn, pre_eval_fn, post_evaluation_fn, param)
 
+    def run(self):
+        if self.mode == 'Train':
+            self.train()
+        else:
+            self.evaluation()
 
     @staticmethod
     def get_experiment_fn(num_gpus, variable_strategy):
