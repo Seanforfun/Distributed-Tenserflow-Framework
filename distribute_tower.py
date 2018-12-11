@@ -137,7 +137,5 @@ class Tower():
     def tower_fn(tower):
         return tower.process()
 
-
-
 if __name__ == '__main__':
     pass

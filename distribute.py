@@ -51,7 +51,8 @@ def main(self):
         experiment.DistributeExperiment.get_experiment_fn(gpu_num, variable_strategy),
         run_config=config,
         hparams=tf.contrib.training.HParams(
-            is_chief=config.is_chief))
+            is_chief=config.is_chief)
+    )
 
 
 if __name__ == '__main__':

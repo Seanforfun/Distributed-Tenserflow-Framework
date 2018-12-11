@@ -9,6 +9,9 @@ import tensorflow as tf
 FLAGS = tf.app.flags.FLAGS
 tf.app.flags.DEFINE_boolean('use_fp16', False,
                             """Train the model using fp16.""")
+tf.app.flags.DEFINE_string('mode', "Train",
+                           """Train: for training; Eval: for evaluation""")
+
 
 # Distributed training options
 tf.app.flags.DEFINE_string('project_name', 'Your project name',
@@ -23,6 +26,10 @@ tf.app.flags.DEFINE_integer("task_index", None,
                             "Worker task index, should be >= 0. task_index=0 is "
                             "the master worker task the performs the variable "
                             "initialization ")
+tf.app.flags.DEFINE_integer("replicas_to_aggregate", None,
+                            "Number of replicas to aggregate before parameter update"
+                            "is applied (For sync_replicas mode only; default: "
+                            "num_workers)")
 
 
 tf.app.flags.DEFINE_integer('intra_op_parallelism_threads ', 0,
@@ -47,6 +54,10 @@ tf.app.flags.DEFINE_boolean('sync', False,
 tf.app.flags.DEFINE_integer('gpu_num', 1,
                             """
                             The number of gpus used. Uses only CPU if set to 0.
+                            """)
+tf.app.flags.DEFINE_integer('epoch_num', 20,
+                            """
+                            Number of epoch for training.
                             """)
 tf.app.flags.DEFINE_integer('batch_per_epoch', 111111111111111,
                             """
@@ -73,7 +84,7 @@ tf.app.flags.DEFINE_integer('input_image_width', 224,
 tf.app.flags.DEFINE_integer('sample_number', 100000,
                             """Total sample numbers to train.""")
 tf.app.flags.DEFINE_float('train_learning_rate', 0.001,
-                            """Value of initail learning rate.""")
+                          """Value of initial learning rate.""")
 tf.app.flags.DEFINE_string('learning_rate_json', 'YOUR LEARNING RATE SAVING PATH',
                            """Path to save learning rate json file.""")
 

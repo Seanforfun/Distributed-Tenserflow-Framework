@@ -11,13 +11,13 @@ import tensorflow as tf
 class Input(metaclass=abc.ABCMeta):
     @staticmethod
     @abc.abstractmethod
-    def load_train_batch(data_dir, batch_size, gpu_num):
+    def load_train_batch(data_dir, batch_size, param):
         """
         Users need to implement this method to get input and ground truth.
         data_dir: Place to load data, can be either a string or a tuple contains multiple paths.
         :param data_dir: Path to load data, can be either a string or a tuple saving multiple paths.
         :param batch_size: size of data in one batch.
-        :param gpu_num: Number of gpu used for training
+        :param param (Optional) for user extension
         :return: raw_data batch
         :return: ground_truth batch
         """
@@ -25,15 +25,15 @@ class Input(metaclass=abc.ABCMeta):
 
     @staticmethod
     @abc.abstractmethod
-    def load_eval_batch(data_dir, batch_size, gpu_num):
+    def load_eval_batch(data_dir, batch_size, param):
         """
         Abstract method of loading evaluation batch, user must implement this function and return
         raw data and ground truth from the data paths.
         :param data_dir: Path to load data, can be either a string or a tuple saving multiple paths.
         :param batch_size: size of data in one batch.
-        :param gpu_num: Number of gou used for evaluation, 0 means working on cpu
-        :return: raw_data batch
-        :return: ground_truth (Optional) Ground truth batch.
+        :param param (Optional) for user extension
+        :return: raw_data batch in list
+        :return: ground_truth (Optional)in list, Ground truth batch.
         """
         pass
 
