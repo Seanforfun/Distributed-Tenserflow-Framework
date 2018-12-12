@@ -11,23 +11,24 @@ import tensorflow as tf
 
 import distribute_constants as constant
 import distribute_flags as flags
+import distribute_input as Input
 import distribute_log as logger
 import distribute_net as net
 import distribute_tower as tower
 from distribute_loss import Loss
-import distribute_input as Input
-from distribute_input import Dataloader
 
 
 class Train(object):
+    def __init__(self, data_loader, input_mode):
+        self.data_loader = data_loader
+        self.input_mode = input_mode
+
     @staticmethod
     def __create_done_queue(num_workers):
         with tf.device("/job:ps/task:0"):
             return tf.FIFOQueue(num_workers, tf.int32, shared_name="done_queue0")
 
-    @staticmethod
-    def train(train_dataloader,
-              input_mode,
+    def train(self,
               pre_train_fn=None,
               post_train_fn=None,
               pre_process_fn=None,
@@ -35,7 +36,6 @@ class Train(object):
               *args,
               **kwargs):
         """
-        :param train_dataloader: A data loader used to get the data from data_dir.
         :param input_mode: One of using tf-records and placeholder. Please specify in distribute_flags.py or command.
         :param pre_train_fn: (Optional) A handler of pre train process.
         :param post_train_fn: (Optional) A handler of post train process.
@@ -96,10 +96,10 @@ class Train(object):
         if pre_train_fn is not None:
             pre_train_result = pre_train_fn(args, kwargs)
 
-        if input_mode == Input.InputOptions.TF_RECORD:
-            batch_queue = train_dataloader.load_queue_from_tfrecord(train_data_dir, batch_size)
+        if self.input_mode == Input.InputOptions.TF_RECORD:
+            batch_queue = self.data_loader.load_queue_from_tfrecord(train_data_dir, batch_size)
         else:
-            sample_path_queue = train_dataloader.load_queue_for_placeholder(train_data_dir)
+            sample_path_queue = self.data_loader.load_queue_for_placeholder(train_data_dir)
 
         # ####################################################################################
         # #############################Training Function ########################################
@@ -117,10 +117,10 @@ class Train(object):
                         with tf.device('/%s:%d' % (device_type, i)):
                             with tf.name_scope('%s_%d' % (constant.TOWER_NAME, i)) as scope:
                                 current_net = net.Net()
-                                if input_mode == Input.InputOptions.TF_RECORD:
-                                    raw_data, ground_truth = train_dataloader.load_train_batch(train_data_dir, batch_size, batch_queue=batch_queue)
+                                if self.input_mode == Input.InputOptions.TF_RECORD:
+                                    raw_data, ground_truth = self.data_loader.load_train_batch(train_data_dir, batch_size, batch_queue=batch_queue)
                                 else:
-                                    raw_data, ground_truth = train_dataloader.load_train_batch(train_data_dir, batch_size)
+                                    raw_data, ground_truth = self.data_loader.load_train_batch(train_data_dir, batch_size)
                                 if pre_process_fn is not None:
                                         raw_data, ground_truth = pre_train_fn(raw_data, ground_truth, args, kwargs)
                                 current_tower = tower.Tower(current_net, scope, tower_grads, raw_data, ground_truth, Loss.loss_fn, optimizer)
@@ -178,10 +178,10 @@ class Train(object):
 
             while not supervisor.should_stop():
                 start = time.time()
-                if input_mode == Input.InputOptions.TF_RECORD:
+                if self.input_mode == Input.InputOptions.TF_RECORD:
                     _, step, loss_value = sess.run([train_op, global_step, loss])
                 else:
-                    raw_data_batch, ground_truth_batch = train_dataloader.load_placeholder_data(batch_size, sample_path_queue)
+                    raw_data_batch, ground_truth_batch = self.data_loader.load_placeholder_data(batch_size, sample_path_queue)
                     # Using placeholder
                     _, step, loss_value = sess.run([train_op, global_step, loss], feed_dict={raw_data: raw_data_batch, ground_truth: ground_truth_batch})
                 duration = time.time() - start
@@ -204,6 +204,9 @@ class Train(object):
         # ####################################################################################
         if post_train_fn is not None:
             post_train_fn(args, kwargs)
+
+    def run(self):
+        self.train()
 
 
 if __name__ == '__main__':

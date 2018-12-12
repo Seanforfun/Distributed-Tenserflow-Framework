@@ -70,6 +70,8 @@ class Dataloader(metaclass=abc.ABCMeta):
 
 
 class TFRecordDataLoader(Dataloader, metaclass=abc.ABCMeta):
+    type = "TFRecordDataLoader"
+
     def __init__(self, features):
         self.features = features
 
@@ -113,6 +115,8 @@ class TFRecordDataLoader(Dataloader, metaclass=abc.ABCMeta):
 
 
 class PlaceholderDataLoader(Dataloader, metaclass=abc.ABCMeta):
+    type = "PlaceholderDataLoader"
+
     def load_train_batch(self, data_dir, batch_size, *args, **kwargs):
         return self.__create_placeholder(data_dir, batch_size, args, kwargs)
 

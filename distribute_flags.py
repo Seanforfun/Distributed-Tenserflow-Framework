@@ -85,9 +85,6 @@ tf.app.flags.DEFINE_integer('sample_number', 100000,
                             """Total sample numbers to train.""")
 tf.app.flags.DEFINE_float('train_learning_rate', 0.001,
                           """Value of initial learning rate.""")
-tf.app.flags.DEFINE_string('learning_rate_json', 'YOUR LEARNING RATE SAVING PATH',
-                           """Path to save learning rate json file.""")
-
 
 # Training Input parameters
 tf.app.flags.DEFINE_string('data_dir', 'YOUR DATA PATH',
@@ -108,8 +105,8 @@ tf.app.flags.DEFINE_integer('eval_batch_size', 1,
                             """Size of your evaluation batch, normally should be 1.""")
 
 # Files position
-tf.app.flags.DEFINE_string('train_learning_rate', './DeHazeNetModel/trainLearningRate.json',
-                           """Path to save training learning rate json file.""")
+tf.app.flags.DEFINE_string('learning_rate_json', 'YOUR LEARNING RATE SAVING PATH',
+                           """Path to save learning rate json file.""")
 
 # Model position
 tf.app.flags.DEFINE_string('model_dir', '',
