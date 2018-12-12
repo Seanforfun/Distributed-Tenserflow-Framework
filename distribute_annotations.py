@@ -78,6 +78,32 @@ def current_feature(**kwds):
     return decorate
 
 
+def get_advice(**kwds):
+    """
+    Get advice and inject the advices to specific aspects,
+    which are:
+    1. pre_fn: (Optional) A handler executed at the beginning.
+    2. post_fn: (Optional) A handler executed at the end.
+    3. pre_process_fn: (Optional) A handler after getting data and before
+    going into the net.
+    4. post_processs_fn: (Optional)  A handler after getting the results from
+    the net and before lsos calculation.
+    :scope: Put it on the Train class in distribute_train.py for training or
+    Eval class in distribute_eval.py for evaluation.
+    :param kwds: Dict, we can use it to pass function handlers, keys are 'pre_fn',
+    'post_fn', 'pre_process_fn' and 'post_processs_fn'.
+    :return:decorate
+    example: @get_device(pre_fn=handler1, post_fn=handler2, pre_process_fn=handler3,
+    post_process_fn=handler4)
+    """
+    def decorate(f):
+        for k in kwds:
+            if k == 'pre_fn' or k == 'post_fn' or k == 'pre_process_fn' or k == 'post_processs_fn':
+                setattr(f, k, kwds[k])
+        return f
+    return decorate
+
+
 def gpu_num(**kwds):
     """
     Annotation for getting number using gpu.
@@ -87,7 +113,7 @@ def gpu_num(**kwds):
     """
     def decorate(f):
         for k in kwds:
-            if k == 'feature':
+            if k == 'gpu_num':
                 setattr(f, k, kwds[k])
         return f
     return decorate

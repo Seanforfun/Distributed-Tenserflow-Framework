@@ -16,8 +16,10 @@ import distribute_log as logger
 import distribute_net as net
 import distribute_tower as tower
 from distribute_loss import Loss
+import  distribute_annotations as annotations
 
 
+@annotations.get_advice(pre_fn="Replace this string with your handler")
 class Train(object):
     def __init__(self, data_loader, input_mode):
         self.data_loader = data_loader
@@ -29,8 +31,8 @@ class Train(object):
             return tf.FIFOQueue(num_workers, tf.int32, shared_name="done_queue0")
 
     def train(self,
-              pre_train_fn=None,
-              post_train_fn=None,
+              pre_fn=None,
+              post_fn=None,
               pre_process_fn=None,
               post_process_fn=None,
               *args,
@@ -93,8 +95,8 @@ class Train(object):
         # #############################Pre Train Function ########################################
         # ####################################################################################
         pre_train_result = None
-        if pre_train_fn is not None:
-            pre_train_result = pre_train_fn(args, kwargs)
+        if pre_fn is not None:
+            pre_train_result = pre_fn(args, kwargs)
 
         if self.input_mode == Input.InputOptions.TF_RECORD:
             batch_queue = self.data_loader.load_queue_from_tfrecord(train_data_dir, batch_size)
@@ -122,7 +124,7 @@ class Train(object):
                                 else:
                                     raw_data, ground_truth = self.data_loader.load_train_batch(train_data_dir, batch_size)
                                 if pre_process_fn is not None:
-                                        raw_data, ground_truth = pre_train_fn(raw_data, ground_truth, args, kwargs)
+                                        raw_data, ground_truth = pre_process_fn(raw_data, ground_truth, args, kwargs)
                                 current_tower = tower.Tower(current_net, scope, tower_grads, raw_data, ground_truth, Loss.loss_fn, optimizer)
                                 summaries, loss, logist = current_tower.process(post_process_fn, pre_train_result)
                                 tower_losses.append(loss)
@@ -202,11 +204,15 @@ class Train(object):
         # ####################################################################################
         # #############################Post Train Function #######################################
         # ####################################################################################
-        if post_train_fn is not None:
-            post_train_fn(args, kwargs)
+        if post_fn is not None:
+            post_fn(args, kwargs)
 
     def run(self):
-        self.train()
+        self.train(pre_fn=None if not hasattr(self, "pre_fn") else getattr(self, "pre_fn"),
+                   post_fn=None if not hasattr(self, "post_fn") else getattr(self, "post_fn"),
+                   pre_process_fn=None if not hasattr(self, "pre_process_fn") else getattr(self, "pre_process_fn"),
+                   post_process_fn=None if not hasattr(self, "post_process_fn") else getattr(self, "post_process_fn")
+        )
 
 
 if __name__ == '__main__':

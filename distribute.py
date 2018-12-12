@@ -40,6 +40,8 @@ def main():
     experiment_model = annotations.get_instance_from_annotation(main, 'model', model)
     # Step 2: Get the mode, either train or eval
     mode = annotations.get_value_from_annotation(main, 'mode')
+    if mode != 'Train' and mode != 'Eval':
+        raise ValueError("mode must be set in the annotation @current_mode")
     # Step 3: Get Data loader for processing
     data_loader = annotations.get_instance_from_annotation(main, 'input', Input)
     input_mode = None
@@ -51,17 +53,16 @@ def main():
         input_mode = Input.InputOptions.TF_RECORD
     else:
         input_mode = Input.InputOptions.PLACEHOLDER
-    # Steps 3: Get training or evaluation instance
-    # TODO
+    # Steps 3: Get training or evaluation instance and run.
     mod = sys.modules['__main__']
-    
-    operator = None
-    if mode == 'Train':
-        operator = Train.Train(data_loader, input_mode)
-    else:
-        operator = Eval.Eval(data_loader, input_mode)
-
+    operator_module = getattr(mod, mode)
+    class_obj = getattr(operator_module, mod)
+    operator = class_obj.__new__(class_obj)
+    setattr(operator, 'data_loader', data_loader)
+    setattr(operator, 'input_mode', input_mode)
     operator.run()
+    # Step 4: Get traing or evaluation gpu number
+    gpu_num = annotations.get_value_from_annotation(main, "gpu_num")
 
 
     gpu_num = flags.FLAGS.gpu_num
