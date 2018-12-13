@@ -119,6 +119,124 @@ def gpu_num(**kwds):
     return decorate
 
 
+def ps_hosts(**kwds):
+    """
+    Annotation for defining parameter server, information is saved as ip:port
+    :param kwds: Dict, used to save the ip and port information about the parameter
+    host. The key is ps_hosts and value is a string saved all information.
+    :return: decorate
+    :example: @ps_hosts(ps_hosts="127.0.0.1:8080, 127.0.0.1: 8081")
+    """
+    def decorate(f):
+        for k in kwds:
+            if k == 'ps_hosts':
+                setattr(f, k, kwds[k])
+        return f
+    return decorate
+
+
+def worker_hosts(**kwds):
+    """
+    Annotation for defining worker server, information is saved as ip:port
+    :param kwds: Dict, used to save the ip and port information about the parameter
+    host. The key is ps_hosts and value is a string saved all information.
+    :return: decorate
+    :example: @worker_hosts(worker_hosts="127.0.0.1:8080, 127.0.0.1: 8081")
+    """
+    def decorate(f):
+        for k in kwds:
+            if k == 'worker_hosts':
+                setattr(f, k, kwds[k])
+        return f
+    return decorate
+
+
+def job_name(**kwds):
+    """
+    Annotation for define current service's job name.
+    :param kwds: Dict, save the name of current job, user could control this annotation by
+    setting flags. --job_name=ps or --job_name=worker
+    :return:decorate
+    """
+    def decorate(f):
+        for k in kwds:
+            if k == 'job_name':
+                setattr(f, k, kwds[k])
+        return f
+    return decorate
+
+
+def task_index(**kwds):
+    """
+    Annotation for define current task index.
+    :param kwds: Dict, save the index of current task, user could control this annotation by
+    setting flags. --task_index=0
+    :return:decorate
+    """
+    def decorate(f):
+        for k in kwds:
+            if k == 'task_index':
+                setattr(f, k, kwds[k])
+        return f
+    return decorate
+
+
+def batch_size(**kwds):
+    """
+    Number of batch size
+    :param kwds: Dict, save the number of samples contains in one batch in 'batch_size'
+    :return:decorate
+    """
+    def decorate(f):
+        for k in kwds:
+            if k == 'batch_size':
+                setattr(f, k, kwds[k])
+        return f
+    return decorate
+
+
+def sample_number(**kwds):
+    """
+    Number of samples in one epoch
+    :param kwds: Dict, save the number of samples in one epoch with key 'sample_number'
+    :return:decorate
+    """
+    def decorate(f):
+        for k in kwds:
+            if k == 'sample_number':
+                setattr(f, k, kwds[k])
+        return f
+    return decorate
+
+
+def epoch_num(**kwds):
+    """
+    Number of epoch to train
+    :param kwds: Dict, save the number of epochs for training in key 'epoch_num'
+    :return:decorate
+    """
+    def decorate(f):
+        for k in kwds:
+            if k == 'epoch_num':
+                setattr(f, k, kwds[k])
+        return f
+    return decorate
+
+
+def model_dir(**kwds):
+    """
+    Path to save and restore model
+    :param kwds: Dict, save the path for saving and restoring model
+    :return:decorate
+    """
+    def decorate(f):
+        for k in kwds:
+            if k == 'model_dir':
+                setattr(f, k, kwds[k])
+        return f
+    return decorate
+
+
 def get_instance_from_annotation(current_obj, attr_name, module):
     """
     Create instance using annotations

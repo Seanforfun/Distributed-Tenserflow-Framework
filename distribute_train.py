@@ -38,9 +38,8 @@ class Train(object):
               *args,
               **kwargs):
         """
-        :param input_mode: One of using tf-records and placeholder. Please specify in distribute_flags.py or command.
-        :param pre_train_fn: (Optional) A handler of pre train process.
-        :param post_train_fn: (Optional) A handler of post train process.
+        :param pre_fn: (Optional) A handler of pre train process.
+        :param post_fn: (Optional) A handler of post train process.
         :param pre_process_fn: (Optional) A handler of process raw data and ground truth before pass them to the net.
         :param post_process_fn: (Optional) A handler of post the direct result from the net(before calculating loss)
         :param args: (Optional) User's additional parameters.
@@ -51,34 +50,23 @@ class Train(object):
         # #####################Parameters Loading###############################
         # ####################################################################
         cpu_num = multiprocessing.cpu_count()
-        gpu_num = flags.FLAGS.gpu_num
-        task_index = flags.FLAGS.task_index
-        is_chief = task_index == 0
-        job_name = flags.FLAGS.job_name
-        model_dir = flags.FLAGS.model_dir
+        is_chief = self.task_index == 0
         train_data_dir = flags.FLAGS.data_dir
-        batch_size = flags.FLAGS.batch_size
         replicas_to_aggregate = flags.FLAGS.replicas_to_aggregate
-        total_step = flags.FLAGS.epoch_num * flags.FLAGS.batch_per_epoch
-        if gpu_num == 0:
+        total_step = self.epoch_num * (self.sample_num // self.batch_size)
+        if self.gpu_num == 0:
             num_devices = 1
             device_type = 'cpu'
         else:
-            num_devices = gpu_num
+            num_devices = self.gpu_num
             device_type = 'gpu'
-        ps_spec = flags.FLAGS.ps_hosts.split(",")
-        worker_spec = flags.FLAGS.worker_hosts.split(",")
-        num_workers = len(worker_spec)
-        cluster = tf.train.ClusterSpec({
-            "ps": ps_spec,
-            "worker": worker_spec})
+        num_workers = self.cluster.num_tasks("worker")
         kill_ps_queue = Train.__create_done_queue(num_workers)
-        server = tf.train.Server(cluster, job_name=flags.FLAGS.job_name, task_index=flags.FLAGS.task_index)
         # ####################################################################################
         # #################################Parameter Server#####################################
         # ####################################################################################
-        if job_name == "ps":
-            with tf.Session(server.target) as sess:
+        if self.job_name == "ps":
+            with tf.Session(self.server.target) as sess:
                 for i in range(num_workers):
                     sess.run(kill_ps_queue.dequeue())
             return
@@ -107,7 +95,7 @@ class Train(object):
         # #############################Training Function ########################################
         # ####################################################################################
         with tf.device(tf.train.replica_device_setter(worker_device=worker_device, ps_device=ps_device,
-                                                          cluster=cluster)):
+                                                          cluster=self.cluster)):
             global_step = tf.get_variable('global_step', [], initializer=tf.constant_initializer(0),
                                               trainable=False)
             tower_grads = []
@@ -120,9 +108,9 @@ class Train(object):
                             with tf.name_scope('%s_%d' % (constant.TOWER_NAME, i)) as scope:
                                 current_net = net.Net()
                                 if self.input_mode == Input.InputOptions.TF_RECORD:
-                                    raw_data, ground_truth = self.data_loader.load_train_batch(train_data_dir, batch_size, batch_queue=batch_queue)
+                                    raw_data, ground_truth = self.data_loader.load_train_batch(train_data_dir, self.batch_size, batch_queue=batch_queue)
                                 else:
-                                    raw_data, ground_truth = self.data_loader.load_train_batch(train_data_dir, batch_size)
+                                    raw_data, ground_truth = self.data_loader.load_train_batch(train_data_dir, self.batch_size)
                                 if pre_process_fn is not None:
                                         raw_data, ground_truth = pre_process_fn(raw_data, ground_truth, args, kwargs)
                                 current_tower = tower.Tower(current_net, scope, tower_grads, raw_data, ground_truth, Loss.loss_fn, optimizer)
@@ -158,7 +146,7 @@ class Train(object):
 
             supervisor = tf.train.MonitoredTrainingSession(
                 is_chief=is_chief,
-                checkpoint_dir=model_dir,
+                checkpoint_dir=self.model_dir,
                 scaffold=tf.train.Scaffold(init_op),
                 log_step_count_steps=1000
             )
@@ -168,12 +156,12 @@ class Train(object):
                 log_device_placement=False)
 
             if is_chief:
-                logger.info("Worker %d: Initializing session..." % task_index)
+                logger.info("Worker %d: Initializing session..." % self.task_index)
             else:
-                logger.info("Worker %d: Waiting for session to be initialized..." % task_index)
-            sess = supervisor.prepare_or_wait_for_session(server.target, config=sess_config)
+                logger.info("Worker %d: Waiting for session to be initialized..." % self.task_index)
+            sess = supervisor.prepare_or_wait_for_session(self.server.target, config=sess_config)
 
-            logger.info("Worker %d: Session initialization complete." % task_index)
+            logger.info("Worker %d: Session initialization complete." % self.task_index)
             if is_chief:
                 supervisor.start_queue_runners(sess, [chief_queue_runner])
                 sess.run(sync_init_op)
@@ -183,15 +171,15 @@ class Train(object):
                 if self.input_mode == Input.InputOptions.TF_RECORD:
                     _, step, loss_value = sess.run([train_op, global_step, loss])
                 else:
-                    raw_data_batch, ground_truth_batch = self.data_loader.load_placeholder_data(batch_size, sample_path_queue)
+                    raw_data_batch, ground_truth_batch = self.data_loader.load_placeholder_data(self.batch_size, sample_path_queue)
                     # Using placeholder
                     _, step, loss_value = sess.run([train_op, global_step, loss], feed_dict={raw_data: raw_data_batch, ground_truth: ground_truth_batch})
                 duration = time.time() - start
 
                 if step % 10 == 0:
-                    num_examples_per_step = batch_size * gpu_num
+                    num_examples_per_step = self.batch_size * self.gpu_num
                     examples_per_sec = num_examples_per_step / duration
-                    sec_per_batch = gpu_num
+                    sec_per_batch = self.gpu_num
                     format_str = ('step %d, loss = %.8f (%.1f examples/sec; %.3f '
                                   'sec/batch)')
                     logger.info(format_str % (step, loss_value, examples_per_sec, sec_per_batch))
