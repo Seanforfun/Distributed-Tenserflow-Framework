@@ -16,15 +16,30 @@ import distribute_log as logger
 import distribute_net as net
 import distribute_tower as tower
 from distribute_loss import Loss
-import  distribute_annotations as annotations
+import distribute_annotations as annotations
 
 
 @annotations.get_advice(pre_fn="Replace this string with your handler")
 class Train(object):
-    def __init__(self, data_loader, input_mode):
-        self.data_loader = data_loader
-        self.input_mode = input_mode
-
+    """
+    Parameter from annotation Injection.
+    1. self.data_loader
+    2. self.input_mode: 'Train' or 'Eval'
+    3. self.batch_size: Number of sample in one batch
+    4. self.epoch_num: Number of time to operate
+    5. self.sample_number: Sample number in one epoch.
+    6. self.model_dir: Path to load the model.
+    7. self.data_dir: Path to retrieve the data.
+    8. self.pre_fn: (Optional) A handler executed at the beginning.
+    9. self.post_fn: (Optional) A handler executed at the end.
+    10. self.pre_process_fn: (Optional) A handler after getting data and before
+    going into the net.
+    11. self.post_processs_fn: (Optional)  A handler after getting the results from
+    the net and before loss calculation.
+    12. self.net: A net contains model, which will do forward processing
+    13. self.optimizer
+    14. self.loss: We call the loss(raw_data, ground truth) to get the loss value.
+    """
     @staticmethod
     def __create_done_queue(num_workers):
         with tf.device("/job:ps/task:0"):
@@ -51,9 +66,8 @@ class Train(object):
         # ####################################################################
         cpu_num = multiprocessing.cpu_count()
         is_chief = self.task_index == 0
-        train_data_dir = flags.FLAGS.data_dir
         replicas_to_aggregate = flags.FLAGS.replicas_to_aggregate
-        total_step = self.epoch_num * (self.sample_num // self.batch_size)
+        total_step = self.epoch_num * (self.sample_number // self.batch_size)
         if self.gpu_num == 0:
             num_devices = 1
             device_type = 'cpu'
@@ -74,7 +88,8 @@ class Train(object):
         # ####################################################################################
         # #################################Worker Service######################################
         # ####################################################################################
-        worker_device = "/job:worker/task:%d" % flags.FLAGS.task_index
+        worker_device = "/job:worker/task:%d" % self.task_index
+        # TODO Re-think if this method is a good way.
         ps_device = "/job:ps/cpu:0"
         for i in range(1, cpu_num):
             ps_device += ", /job:ps/cpu: %d" % i
@@ -87,33 +102,36 @@ class Train(object):
             pre_train_result = pre_fn(args, kwargs)
 
         if self.input_mode == Input.InputOptions.TF_RECORD:
-            batch_queue = self.data_loader.load_queue_from_tfrecord(train_data_dir, batch_size)
+            batch_queue = self.data_loader.load_queue_from_tfrecord(self.data_dir, self.batch_size)
         else:
-            sample_path_queue = self.data_loader.load_queue_for_placeholder(train_data_dir)
+            sample_path_queue = self.data_loader.load_queue_for_placeholder(self.data_dir)
 
         # ####################################################################################
         # #############################Training Function ########################################
         # ####################################################################################
         with tf.device(tf.train.replica_device_setter(worker_device=worker_device, ps_device=ps_device,
-                                                          cluster=self.cluster)):
+                                                      cluster=self.cluster)):
             global_step = tf.get_variable('global_step', [], initializer=tf.constant_initializer(0),
-                                              trainable=False)
+                                          trainable=False)
             tower_grads = []
             tower_losses = []
             tower_logist = []
-            optimizer = tf.train.AdamOptimizer(constant.INITIAL_LEARNING_RATE)
             with tf.variable_scope(tf.get_variable_scope()):
                     for i in range(num_devices):
                         with tf.device('/%s:%d' % (device_type, i)):
                             with tf.name_scope('%s_%d' % (constant.TOWER_NAME, i)) as scope:
-                                current_net = net.Net()
                                 if self.input_mode == Input.InputOptions.TF_RECORD:
-                                    raw_data, ground_truth = self.data_loader.load_train_batch(train_data_dir, self.batch_size, batch_queue=batch_queue)
+                                    raw_data, ground_truth = self.data_loader.load_train_batch(batch_queue=batch_queue)
                                 else:
-                                    raw_data, ground_truth = self.data_loader.load_train_batch(train_data_dir, self.batch_size)
+                                    raw_data, ground_truth = self.data_loader.load_train_batch()
                                 if pre_process_fn is not None:
                                         raw_data, ground_truth = pre_process_fn(raw_data, ground_truth, args, kwargs)
-                                current_tower = tower.Tower(current_net, scope, tower_grads, raw_data, ground_truth, Loss.loss_fn, optimizer)
+                                current_tower = tower.Tower(self.net, scope,
+                                                            tower_grads,
+                                                            raw_data,
+                                                            ground_truth,
+                                                            self.loss,
+                                                            self.optimizer)
                                 summaries, loss, logist = current_tower.process(post_process_fn, pre_train_result)
                                 tower_losses.append(loss)
                                 tower_logist.append(logist)
@@ -129,7 +147,7 @@ class Train(object):
                 replicas_to_aggregate = replicas_to_aggregate
 
             optimizer = tf.train.SyncReplicasOptimizer(
-                optimizer, use_locking=False,
+                self.optimizer, use_locking=False,
                 replicas_to_aggregate=replicas_to_aggregate,
                 total_num_replicas=num_workers,
                 name="sync_replicas")
@@ -171,7 +189,7 @@ class Train(object):
                 if self.input_mode == Input.InputOptions.TF_RECORD:
                     _, step, loss_value = sess.run([train_op, global_step, loss])
                 else:
-                    raw_data_batch, ground_truth_batch = self.data_loader.load_placeholder_data(self.batch_size, sample_path_queue)
+                    raw_data_batch, ground_truth_batch = self.data_loader.load_placeholder_data(sample_path_queue)
                     # Using placeholder
                     _, step, loss_value = sess.run([train_op, global_step, loss], feed_dict={raw_data: raw_data_batch, ground_truth: ground_truth_batch})
                 duration = time.time() - start

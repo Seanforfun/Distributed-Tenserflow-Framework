@@ -15,18 +15,13 @@ def current_model(**kwds):
     return decorate
 
 
-@current_model(net="Model")
 class Net(object):
-    def __init__(self, model = None):
+    def __init__(self, model=None):
         if model is not None:
             self.model = model
-        else:
-            model_classname = getattr(Net, 'net', 0)
-            model_class = getattr(model, model_classname)
-            self.model = model_class.__new__(model_class)
-        assert self.model is not None, "Please either create a model or use annotation @current_model"
 
     def inference(self, pre_proccessed_data):
+        assert self.model is not None, "Please either create a model or use annotation @current_model"
         return self.model.inference(pre_proccessed_data)
 
     @staticmethod

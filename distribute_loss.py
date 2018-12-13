@@ -4,10 +4,12 @@
 #   Function: The training file is used to save the training process
 #  ====================================================
 
+import abc
 
-class Loss():
-    @staticmethod
-    def loss_fn(predict, ground_truth):
+
+class Loss(metaclass=abc.ABCMeta):
+    @abc.abstractmethod
+    def loss_fn(self, predict, ground_truth):
         """
         :param predict: The predict result from the net structure.
         :param ground_truth: ground_truth value to compare with.

@@ -87,7 +87,7 @@ def get_advice(**kwds):
     3. pre_process_fn: (Optional) A handler after getting data and before
     going into the net.
     4. post_processs_fn: (Optional)  A handler after getting the results from
-    the net and before lsos calculation.
+    the net and before loss calculation.
     :scope: Put it on the Train class in distribute_train.py for training or
     Eval class in distribute_eval.py for evaluation.
     :param kwds: Dict, we can use it to pass function handlers, keys are 'pre_fn',
@@ -232,6 +232,64 @@ def model_dir(**kwds):
     def decorate(f):
         for k in kwds:
             if k == 'model_dir':
+                setattr(f, k, kwds[k])
+        return f
+    return decorate
+
+
+def data_dir(**kwds):
+    """
+    Path of loading the data.
+    Distributed Tensorflow Framework provides 2 default data loading methods: tfrecord, placeholder.
+    If user is tf-record, please provide the directory string to the tf-records file.
+    If user is using placeholder(though it is not a good way), provide a  long string so the string be saved
+    into self.data_dir, users has tons of ways to parse this string when they create their own class inplements
+    PlaceholderDataLoader class.
+    :param kwds: Dict, save the path for loading the data
+    :return:decorate
+    :example:
+    tf-record: @data_dir(data_dir='/home/tfrecord/train.tfrecords')
+    placeholder: @data_dir(data_dir='/home/raw_data, /home/ground_truth')
+    """
+    def decorate(f):
+        for k in kwds:
+            if k == 'data_dir':
+                setattr(f, k, kwds[k])
+        return f
+    return decorate
+
+
+def optimizer(**kwds):
+    """
+    Create custom optimizer instance here, if not provide, we will user Adam as default.
+    For the default optimizer, the learning rate is 0.001.
+    We will check if this annotation is provided if not, default optimizer is provided.
+    :param kwds: Dict, save the path for loading the data
+    :return:decorate
+    :example:
+    @optimizer(optimizer=tf.train.AdamOptimizer(0.001))
+    """
+    def decorate(f):
+        for k in kwds:
+            if k == 'optimizer':
+                setattr(f, k, kwds[k])
+        return f
+    return decorate
+
+
+def loss(**kwds):
+    """
+    Inferece to the Loss class in distribute_loss.py.
+    User must implements the Loss class and realize the method of calculating the loss.
+    In the annotation, list the name of the implemented class.
+    :param kwds: Dict, save the path for loading the data
+    :return:decorate
+    :example:
+    @loss(loss='MyLoss')
+    """
+    def decorate(f):
+        for k in kwds:
+            if k == 'loss':
                 setattr(f, k, kwds[k])
         return f
     return decorate

@@ -14,13 +14,13 @@ import distribute_log as logger
 
 
 class Tower():
-    def __init__(self, net, scope, tower_grades, raw_data, ground_truth, loss_fn, optimizer):
+    def __init__(self, net, scope, tower_grades, raw_data, ground_truth, loss, optimizer):
         self.net = net
         self.scope = scope
         self.tower_grades = tower_grades
         self.raw_data = raw_data
         self.ground_truth = ground_truth
-        self.loss_fn = loss_fn
+        self.loss = loss
         self.optimizer = optimizer
 
     def get_gradient(self, loss):
@@ -64,7 +64,7 @@ class Tower():
         :param result: The result that we get from the model.
         :return: The loss value
         """
-        return self.loss_fn(result, self.ground_truth)
+        return self.loss.loss(result, self.ground_truth)
 
     def loss_to_scope(self, result):
         loss = self.__loss(result)

@@ -23,11 +23,10 @@ class InputOptions(Enum):
 
 class Dataloader(metaclass=abc.ABCMeta):
     @abc.abstractmethod
-    def load_train_batch(self, data_dir, *args, **kwargs):
+    def load_train_batch(self, *args, **kwargs):
         """
         Users need to implement this method to get input and ground truth.
         data_dir: Place to load data, can be either a string or a tuple contains multiple paths.
-        :param data_dir: Path to load data, can be either a string or a tuple saving multiple paths.
         :param args: (Optional) Additional parameters for training.
         :param kwargs: (Optional) Additional dict for training.
         :return: raw_data batch
@@ -36,7 +35,7 @@ class Dataloader(metaclass=abc.ABCMeta):
         pass
 
     @abc.abstractmethod
-    def load_eval_batch(self, data_dir, *args, **kwargs):
+    def load_eval_batch(self, *args, **kwargs):
         """
         Abstract method of loading evaluation batch, user must implement this function and return
         raw data and ground truth from the data paths.
@@ -72,13 +71,13 @@ class TFRecordDataLoader(Dataloader, metaclass=abc.ABCMeta):
     def __init__(self, features):
         self.features = features
 
-    def load_train_batch(self, data_dir, *args, **kwargs):
+    def load_train_batch(self, *args, **kwargs):
         queue = kwargs["batch_queue"]
         if queue is None:
             raise RuntimeError("Cannot find get the queue from tf-record.")
         return queue.dequeue()
 
-    def load_eval_batch(self, data_dir, *args, **kwargs):
+    def load_eval_batch(self, *args, **kwargs):
         pass
 
     @abc.abstractmethod
@@ -101,34 +100,32 @@ class TFRecordDataLoader(Dataloader, metaclass=abc.ABCMeta):
             serialized_example,
             self.features)
         example_list = self.__decode_raw_data(raw_features, height, width, args, kwargs)
-        min_queue_examples = int(flags.FLAGS.batch_per_epoch * self.batch_size *
-                                 constants.MIN_FRACTION_OF_EXAMPLE_IN_QUEUE)
+        min_queue_examples = int(self.sample_number,constants.MIN_FRACTION_OF_EXAMPLE_IN_QUEUE)
         batch_data = self._generate_image_batch(example_list,
-                                                      min_queue_examples,
-                                                      multiprocessing.cpu_count() * 2,
-                                                      shuffle=True)
+                                                min_queue_examples,
+                                                multiprocessing.cpu_count() * 2,
+                                                shuffle=True)
         return tf.contrib.slim.prefetch_queue.prefetch_queue(list(batch_data), capacity=2 * flags.FLAGS.gpu_num)
 
 
 class PlaceholderDataLoader(Dataloader, metaclass=abc.ABCMeta):
     type = "PlaceholderDataLoader"
 
-    def load_train_batch(self, data_dir, *args, **kwargs):
-        return self.__create_placeholder(data_dir, args, kwargs)
+    def load_train_batch(self, *args, **kwargs):
+        return self.__create_placeholder(args, kwargs)
 
-    def load_eval_batch(self, data_dir, *args, **kwargs):
+    def load_eval_batch(self, *args, **kwargs):
         pass
 
-    def load_queue_for_placeholder(self, data_dir, *args, **kwargs):
+    def load_queue_for_placeholder(self, *args, **kwargs):
         batch_queue = queue.Queue()
-        self.__put_names_dict_into_queue(data_dir, batch_queue)
+        self.__put_names_dict_into_queue(batch_queue, args, kwargs)
         return batch_queue
 
     @abc.abstractmethod
-    def __create_placeholder(self, data_dir, *args, **kwargs):
+    def __create_placeholder(self, *args, **kwargs):
         """
         User must implement this method and return the placeholder
-        :param data_dir: place to load data.
         :param args: (Optional) User's parameter. Save height, width etc.
         :param kwargs: (Optional) User's dict. Save height, width etc.
         :return: return placeholders
@@ -136,21 +133,25 @@ class PlaceholderDataLoader(Dataloader, metaclass=abc.ABCMeta):
         pass
 
     @abc.abstractmethod
-    def __put_names_dict_into_queue(self, data_dir, queue):
+    def __put_names_dict_into_queue(self, queue, *args, **kwargs):
         """
         Users must implement this method so that all datas path are arranged as dictionary
         and save into the queue.
-        :param data_dir: dict or any data format so we have all data path.
         :param queue: queue to insert the samples.
+        :param args: (Optional) For user to pass extension parameters.
+        :param kwargs: (Optional) For user to pass extension dict.
+        :return:
         """
         pass
 
     @abc.abstractmethod
-    def decode_data_from_path_name(self, paths):
+    def decode_data_from_path_name(self, paths, *args, **kwargs):
         """
         We get the sample name queue at the very begining, now we get the data
         from the path and return them so program can generate a queue.
         :param paths: paths of the data to read from.
+        :param args: (Optional) For user to pass extension parameters.
+        :param kwargs: (Optional) For user to pass extension dict.
         :return: data Dict, two items {'raw_data': [], 'ground_truth': []}
         """
         pass
@@ -160,7 +161,7 @@ class PlaceholderDataLoader(Dataloader, metaclass=abc.ABCMeta):
         ground_truth_batch = []
         for i in range(self.batch_size):
             paths = sample_path_queue.get()
-            data = self.decode_data_from_path_name(paths)
+            data = self.decode_data_from_path_name(paths, args, kwargs)
             raw_batch.append(data['raw_data'])
             ground_truth_batch.append(data['ground_truth'])
             sample_path_queue.put(paths)

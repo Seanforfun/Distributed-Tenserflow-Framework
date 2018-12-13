@@ -9,9 +9,6 @@ import tensorflow as tf
 FLAGS = tf.app.flags.FLAGS
 tf.app.flags.DEFINE_boolean('use_fp16', False,
                             """Train the model using fp16.""")
-tf.app.flags.DEFINE_string('mode', "Train",
-                           """Train: for training; Eval: for evaluation""")
-
 
 # Distributed training options
 tf.app.flags.DEFINE_string('project_name', 'Your project name',
@@ -43,40 +40,14 @@ tf.app.flags.DEFINE_integer('inter_op_parallelism_threads ', 0,
                              Number of threads to use for inter-op parallelism. If set to 0, the
                             system will pick an appropriate number.
                             """)
-tf.app.flags.DEFINE_integer('train_step', 10000,
-                           """
-                           Number of steps to run for current worker.
-                           """)
-tf.app.flags.DEFINE_boolean('sync', False,
-                            """Whether to have all workers update synchronize""")
 
 # Training options
-tf.app.flags.DEFINE_integer('gpu_num', 1,
-                            """
-                            The number of gpus used. Uses only CPU if set to 0.
-                            """)
-tf.app.flags.DEFINE_integer('epoch_num', 20,
-                            """
-                            Number of epoch for training.
-                            """)
-tf.app.flags.DEFINE_integer('batch_per_epoch', 111111111111111,
-                            """
-                            The number of batch in one epoch.
-                            """)
-tf.app.flags.DEFINE_string('variable_strategy', 'CPU',
-                           """
-                           Where to locate variable operations.
-                           CPU: locate variables on CPU, CPU is like the parameter server.
-                           GPU: locate variables on GPU, GPU is like the parameter server.
-                           """)
 tf.app.flags.DEFINE_boolean('log_device_placement', False,
-                           """
+                            """
                            Whether to log device placement.
                            """)
 
 # Training parameters
-tf.app.flags.DEFINE_integer('batch_size', 35,
-                            """Number of images to process in a batch.""")
 tf.app.flags.DEFINE_integer('input_image_height', 224,
                             """Input image height.""")
 tf.app.flags.DEFINE_integer('input_image_width', 224,
@@ -86,31 +57,9 @@ tf.app.flags.DEFINE_integer('sample_number', 100000,
 tf.app.flags.DEFINE_float('train_learning_rate', 0.001,
                           """Value of initial learning rate.""")
 
-# Training Input parameters
-tf.app.flags.DEFINE_string('data_dir', 'YOUR DATA PATH',
-                           """Path to save data.""")
-tf.app.flags.DEFINE_string('data_load_option', "tfrecords",
-                           """
-                            Select from either 'tfrecords' or 'placeholder'
-                            'tfrecords': Using tf-record to load data(Preferred).
-                            'placeholder': Use placeholder to create data.
-                            """)
-
-# Evaluation Input parameters
-tf.app.flags.DEFINE_integer('eval_example_num', 10000,
-                            """Number of evaluation examples.""")
-tf.app.flags.DEFINE_string('eval_data_dir', 'YOUR EVALUATION DATA PATH',
-                           """Path to save evaluation data.""")
-tf.app.flags.DEFINE_integer('eval_batch_size', 1,
-                            """Size of your evaluation batch, normally should be 1.""")
-
 # Files position
 tf.app.flags.DEFINE_string('learning_rate_json', 'YOUR LEARNING RATE SAVING PATH',
                            """Path to save learning rate json file.""")
-
-# Model position
-tf.app.flags.DEFINE_string('model_dir', '',
-                           """Path to save training model.""")
 
 
 if __name__ == '__main__':
