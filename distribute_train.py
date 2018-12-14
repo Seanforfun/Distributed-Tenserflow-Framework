@@ -48,6 +48,7 @@ class Train(object):
     def train(self,
               pre_fn=None,
               post_fn=None,
+              init_fn=None,
               pre_process_fn=None,
               post_process_fn=None,
               *args,
@@ -80,9 +81,9 @@ class Train(object):
         # #################################Parameter Server#####################################
         # ####################################################################################
         if self.job_name == "ps":
-            with tf.Session(self.server.target) as sess:
+            with tf.Session(self.server.target) as monitored_sess:
                 for i in range(num_workers):
-                    sess.run(kill_ps_queue.dequeue())
+                    monitored_sess.run(kill_ps_queue.dequeue())
             return
 
         # ####################################################################################
@@ -153,55 +154,53 @@ class Train(object):
             # Apply the gradients to adjust the shared variables
             train_op = optimizer.apply_gradients(grads, global_step=global_step)
 
-            chief_queue_runner = optimizer.get_chief_queue_runner()
+            sync_replicas_hook = optimizer.make_session_run_hook(is_chief)
             token_nums = max(replicas_to_aggregate - num_workers, 0)
             sync_init_op = optimizer.get_init_tokens_op(token_nums)
             init_op = tf.global_variables_initializer()
             kill_ps_enqueue_op = kill_ps_queue.enqueue(1)
 
-            supervisor = tf.train.Supervisor(
-                is_chief=is_chief,
-                init_op=init_op,
-                logdir=self.model_dir,
-                recovery_wait_secs=1,
-                global_step=global_step)
-
-            sess_config = tf.ConfigProto(
-                allow_soft_placement=True,
-                log_device_placement=False)
             if is_chief:
                 logger.info("Worker %d: Initializing session..." % self.task_index)
             else:
                 logger.info("Worker %d: Waiting for session to be initialized..." % self.task_index)
-            sess = supervisor.prepare_or_wait_for_session(self.server.target, config=sess_config)
 
-            logger.info("Worker %d: Session initialization complete." % self.task_index)
-            if is_chief:
-                supervisor.start_queue_runners(sess, [chief_queue_runner])
-                sess.run(sync_init_op)
+            with tf.train.MonitoredTrainingSession(master=self.server.target,
+                                                     is_chief=is_chief,
+                                                     checkpoint_dir=self.model_dir,
+                                                     scaffold=tf.train.Scaffold(init_op=init_op,
+                                                                                init_fn=init_fn),
+                                                     hooks=[tf.train.StopAtStepHook(last_step=total_step),
+                                                            sync_replicas_hook],
+                                                     save_checkpoint_secs=600,
+                                                     config=tf.ConfigProto(
+                                                         allow_soft_placement=True,
+                                                         log_device_placement=False),
+                                                     stop_grace_period_secs=60,
+                                                     log_step_count_steps=100) as sess:
+                logger.info("Worker %d: Session initialization complete." % self.task_index)
 
-            while not supervisor.should_stop():
-                start = time.time()
-                if self.input_mode == Input.InputOptions.TF_RECORD:
-                    _, step, loss_value = sess.run([train_op, global_step, loss])
-                else:
-                    raw_data_batch, ground_truth_batch = self.data_loader.load_placeholder_data(sample_path_queue)
-                    # Using placeholder
-                    _, step, loss_value = sess.run([train_op, global_step, loss], feed_dict={raw_data: raw_data_batch, ground_truth: ground_truth_batch})
-                duration = time.time() - start
-
-                if step % 10 == 0:
-                    num_examples_per_step = self.batch_size * self.gpu_num
-                    examples_per_sec = num_examples_per_step / duration
-                    sec_per_batch = self.gpu_num
-                    format_str = ('step %d, loss = %.8f (%.1f examples/sec; %.3f '
-                                  'sec/batch)')
-                    logger.info(format_str % (step, loss_value, examples_per_sec, sec_per_batch))
-                if step >= total_step:
-                    break
-            sess.run(kill_ps_enqueue_op)
-            logger.info('kill_ps_enqueue_op done....')
-        supervisor.stop()
+                while not sess.should_stop():
+                    start = time.time()
+                    if self.input_mode == Input.InputOptions.TF_RECORD:
+                        _, step, loss_value = sess.run([train_op, global_step, loss])
+                    else:
+                        raw_data_batch, ground_truth_batch = self.data_loader.load_placeholder_data(sample_path_queue)
+                        # Using placeholder
+                        _, step, loss_value = sess.run([train_op, global_step, loss],
+                                                                 feed_dict={raw_data: raw_data_batch,
+                                                                            ground_truth: ground_truth_batch})
+                    duration = time.time() - start
+                    if step % 10 == 0:
+                        num_examples_per_step = self.batch_size * self.gpu_num
+                        examples_per_sec = num_examples_per_step / duration
+                        sec_per_batch = self.gpu_num
+                        format_str = ('step %d, loss = %.8f (%.1f examples/sec; %.3f '
+                                      'sec/batch)')
+                        logger.info(format_str % (step, loss_value, examples_per_sec, sec_per_batch))
+                    if sess.should_stop():
+                        sess.run(kill_ps_enqueue_op)
+                        logger.info('kill_ps_enqueue_op done....')
 
         # ####################################################################################
         # #############################Post Train Function #######################################
@@ -213,7 +212,8 @@ class Train(object):
         self.train(pre_fn=None if not hasattr(self, "pre_fn") else getattr(self, "pre_fn"),
                    post_fn=None if not hasattr(self, "post_fn") else getattr(self, "post_fn"),
                    pre_process_fn=None if not hasattr(self, "pre_process_fn") else getattr(self, "pre_process_fn"),
-                   post_process_fn=None if not hasattr(self, "post_process_fn") else getattr(self, "post_process_fn")
+                   post_process_fn=None if not hasattr(self, "post_process_fn") else getattr(self, "post_process_fn"),
+                   init_fn=None if not hasattr(self, "init_fn") else getattr(self, "init_fn"),
         )
 
 

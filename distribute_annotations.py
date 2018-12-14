@@ -98,7 +98,7 @@ def get_advice(**kwds):
     """
     def decorate(f):
         for k in kwds:
-            if k == 'pre_fn' or k == 'post_fn' or k == 'pre_process_fn' or k == 'post_processs_fn':
+            if k == 'pre_fn' or k == 'post_fn' or k == 'pre_process_fn' or k == 'post_processs_fn' or k == 'init_fn':
                 setattr(f, k, kwds[k])
         return f
     return decorate
