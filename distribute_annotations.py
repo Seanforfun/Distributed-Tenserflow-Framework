@@ -72,7 +72,7 @@ def current_feature(**kwds):
     """
     def decorate(f):
         for k in kwds:
-            if k == 'feature':
+            if k == 'features':
                 setattr(f, k, kwds[k])
         return f
     return decorate

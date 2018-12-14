@@ -43,7 +43,7 @@ import distribute_loss as Loss
 @annotations.epoch_num(epoch_num=100)
 @annotations.model_dir(model_dir="")
 @annotations.data_dir(data_dir="")
-def main():
+def main(self):
     # The env variable is on deprecation path, default is set to off.
     os.environ['TF_SYNC_ON_FINISH'] = '0'
     os.environ['TF_ENABLE_WINOGRAD_NONFUSED'] = '1'
@@ -58,13 +58,15 @@ def main():
     worker_spec = worker_hosts.split(",")
     job_name = annotations.get_value_from_annotation(main, "job_name")
     task_index = annotations.get_value_from_annotation(main, "task_index")
+    if job_name == 'ps':
+        os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
     # Step 2: parameters to build the operator
     optimizer = annotations.get_value_from_annotation(main, 'optimizer')
     mode = annotations.get_value_from_annotation(main, 'mode')
     if mode != 'Train' and mode != 'Eval':
         raise ValueError("mode must be set in the annotation @current_mode")
-    batch_size = annotations.get_value_from_annotation(main, 'batch')
+    batch_size = annotations.get_value_from_annotation(main, 'batch_size')
     epoch_num = annotations.get_value_from_annotation(main, 'epoch_num')
     sample_number = annotations.get_value_from_annotation(main, 'sample_number')
     data_dir = annotations.get_value_from_annotation(main, 'data_dir')
@@ -72,20 +74,19 @@ def main():
     if not os.path.exists(model_dir):
         raise ValueError("Path to save or restore model doesn't exist")
     loss = annotations.get_instance_from_annotation(main, 'loss', Loss)
-    experiment_model = annotations.get_instance_from_annotation(main, 'model', model)
-    experiment_net = net.Net(model=experiment_model)
     cluster = tf.train.ClusterSpec({
         "ps": ps_spec,
         "worker": worker_spec})
     cluster.num_tasks("worker")
     server = tf.train.Server(cluster, job_name=job_name, task_index=task_index)
+    gpu_num = annotations.get_value_from_annotation(main, 'gpu_num')
 
     # Step 3: Create data loader instance
     data_loader = annotations.get_instance_from_annotation(main, 'input', Input)
     # Step 3.1: Build the data loader instance
     if data_loader.type == "TFRecordDataLoader":
         if not hasattr(main, 'features'):
-            raise ValueError("Please user @current_feature to create your features for data_loader")
+            raise ValueError("Please use @current_feature to create your features for data_loader")
         features = annotations.get_value_from_annotation(main, 'features')
         setattr(data_loader, 'features', features)
         input_mode = Input.InputOptions.TF_RECORD
@@ -94,11 +95,12 @@ def main():
     setattr(data_loader, 'batch_size', batch_size)
     setattr(data_loader, 'sample_number', sample_number)
     setattr(data_loader, 'data_dir', data_dir)
+    setattr(data_loader, 'gpu_num', gpu_num)
 
     # Step 4: Get operator instance
     mod = sys.modules['__main__']
     operator_module = getattr(mod, mode)
-    class_obj = getattr(operator_module, mod)
+    class_obj = getattr(operator_module, mode, mod)
     operator = class_obj.__new__(class_obj)
 
     # Step 5: Build the operator
@@ -114,8 +116,12 @@ def main():
     setattr(operator, 'sample_number', sample_number)
     setattr(operator, 'model_dir', model_dir)
     setattr(operator, 'data_dir', data_dir)
-    setattr(operator, 'net', experiment_net)
+    if job_name != 'ps':
+        experiment_model = annotations.get_instance_from_annotation(main, 'model', model)
+        experiment_net = net.Net(model=experiment_model)
+        setattr(operator, 'net', experiment_net)
     setattr(operator, 'loss', loss)
+    setattr(operator, 'gpu_num', gpu_num)
 
     # ################################################################################
     # #############################Start the operation####################################

@@ -42,7 +42,8 @@ class Tower():
         :return: loss
         :return: logist result from the network, might be post processed by post_process_fn
         """
-        loss, logist = self.tower_loss(post_process_fn, args, kwargs)
+        with tf.variable_scope(tf.get_variable_scope(), reuse=False):
+            loss, logist = self.tower_loss(post_process_fn, args, kwargs)
         # Reuse variables for the next tower.
         tf.get_variable_scope().reuse_variables()
 

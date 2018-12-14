@@ -54,7 +54,7 @@ class Dataloader(metaclass=abc.ABCMeta):
                 batch_size=self.batch_size,
                 num_threads=num_thread,
                 capacity=min_queue_examples + 3 * self.batch_size,
-                min_after_dequeue=min_queue_examples)
+                min_after_dequeue=0)
         else:
             examples = tf.train.batch(
                 example_list,
@@ -68,14 +68,11 @@ class Dataloader(metaclass=abc.ABCMeta):
 class TFRecordDataLoader(Dataloader, metaclass=abc.ABCMeta):
     type = "TFRecordDataLoader"
 
-    def __init__(self, features):
-        self.features = features
-
-    def load_train_batch(self, *args, **kwargs):
-        queue = kwargs["batch_queue"]
-        if queue is None:
+    def load_train_batch(self, train_image_filename_queue, *args, **kwargs):
+        if train_image_filename_queue is None:
             raise RuntimeError("Cannot find get the queue from tf-record.")
-        return queue.dequeue()
+        raw_data, ground_truth = self.load_batch_from_tfrecord(train_image_filename_queue)
+        return raw_data, ground_truth
 
     def load_eval_batch(self, *args, **kwargs):
         pass
@@ -88,24 +85,21 @@ class TFRecordDataLoader(Dataloader, metaclass=abc.ABCMeta):
         """
         pass
 
-    def load_queue_from_tfrecord(self, data_dir, *args, **kwargs):
+    def load_batch_from_tfrecord(self, filename_queue, *args, **kwargs):
         height = flags.FLAGS.input_image_height
         width = flags.FLAGS.input_image_width
-        if not tf.gfile.Exists(data_dir):
-            raise ValueError("Fail to load TFRecord from directory: " + data_dir)
-        filename_queue = tf.train.string_input_producer([data_dir])
         reader = tf.TFRecordReader()
         _, serialized_example = reader.read(filename_queue)
         raw_features = tf.parse_single_example(
             serialized_example,
             self.features)
         example_list = self.__decode_raw_data(raw_features, height, width, args, kwargs)
-        min_queue_examples = int(self.sample_number,constants.MIN_FRACTION_OF_EXAMPLE_IN_QUEUE)
+        min_queue_examples = int(self.sample_number *  constants.MIN_FRACTION_OF_EXAMPLE_IN_QUEUE)
         batch_data = self._generate_image_batch(example_list,
                                                 min_queue_examples,
                                                 multiprocessing.cpu_count() * 2,
                                                 shuffle=True)
-        return tf.contrib.slim.prefetch_queue.prefetch_queue(list(batch_data), capacity=2 * flags.FLAGS.gpu_num)
+        return batch_data
 
 
 class PlaceholderDataLoader(Dataloader, metaclass=abc.ABCMeta):

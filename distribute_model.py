@@ -4,8 +4,10 @@
 #   net.
 #  ====================================================
 import abc
+import tensorflow as tf
 
 import distribute_log as logger
+import distribute_tools as tools
 
 
 class Model(metaclass=abc.ABCMeta):

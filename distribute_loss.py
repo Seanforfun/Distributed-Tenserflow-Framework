@@ -5,11 +5,12 @@
 #  ====================================================
 
 import abc
+import tensorflow as tf
 
 
 class Loss(metaclass=abc.ABCMeta):
     @abc.abstractmethod
-    def loss_fn(self, predict, ground_truth):
+    def loss(self, predict, ground_truth):
         """
         :param predict: The predict result from the net structure.
         :param ground_truth: ground_truth value to compare with.
