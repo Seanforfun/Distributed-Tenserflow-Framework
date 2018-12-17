@@ -51,9 +51,11 @@ class Train(object):
               init_fn=None,
               pre_process_fn=None,
               post_process_fn=None,
+              parse_data_dir_fn=None,
               *args,
               **kwargs):
         """
+        :param init_fn: (Optional) A handler for init process used by MonitorTrainSession.
         :param pre_fn: (Optional) A handler of pre train process.
         :param post_fn: (Optional) A handler of post train process.
         :param pre_process_fn: (Optional) A handler of process raw data and ground truth before pass them to the net.
@@ -77,6 +79,7 @@ class Train(object):
             device_type = 'gpu'
         num_workers = self.cluster.num_tasks("worker")
         kill_ps_queue = Train.__create_done_queue(num_workers)
+        data_dir = self.data_dir if parse_data_dir_fn is None else parse_data_dir_fn(self.data_dir)
         # ####################################################################################
         # #################################Parameter Server#####################################
         # ####################################################################################
@@ -90,15 +93,12 @@ class Train(object):
         # #################################Worker Service######################################
         # ####################################################################################
         worker_device = "/job:worker/task:%d" % self.task_index
-        # TODO Re-think if this method is a good way.
         ps_device = "/job:ps/cpu:0"
 
         # ####################################################################################
         # #############################Pre Train Function ########################################
         # ####################################################################################
-        pre_train_result = None
-        if pre_fn is not None:
-            pre_train_result = pre_fn(args, kwargs)
+        pre_train_result = None if pre_fn is None else pre_fn(args, kwargs)
 
         # ####################################################################################
         # #############################Training Function ########################################
@@ -118,13 +118,16 @@ class Train(object):
                         with tf.name_scope('%s_%d' % (constant.TOWER_NAME, i)) as scope:
                             if self.input_mode == Input.InputOptions.TF_RECORD:
                                 train_image_filename_queue = tf.train.string_input_producer(
-                                    [self.data_dir], shuffle=True)
+                                    [data_dir], shuffle=True)
                                 raw_data, ground_truth = self.data_loader.load_train_batch(train_image_filename_queue)
-                            else:
-                                sample_path_queue = self.data_loader.load_queue_for_placeholder(self.data_dir)
+                            elif self.input_mode == Input.InputOptions.PLACEHOLDER:
+                                # The raw_data and ground_truth is placeholder. Will be feed when calling session.
                                 raw_data, ground_truth = self.data_loader.load_train_batch()
-                            if pre_process_fn is not None:
-                                    raw_data, ground_truth = pre_process_fn(raw_data, ground_truth, args, kwargs)
+                            elif self.input_mode == Input.InputOptions.DATAPATHLOADER:
+                                train_image_filename_queue = self.data_loader.create_name_queue(data_dir)
+                                raw_data, ground_truth = self.data_loader.load_train_batch(train_image_filename_queue)
+                            raw_data, ground_truth = raw_data, ground_truth if pre_process_fn is None else \
+                                pre_process_fn(raw_data, ground_truth, args, kwargs)
                             current_tower = tower.Tower(current_net, scope,
                                                         tower_grads,
                                                         raw_data,
@@ -155,8 +158,6 @@ class Train(object):
             train_op = optimizer.apply_gradients(grads, global_step=global_step)
 
             sync_replicas_hook = optimizer.make_session_run_hook(is_chief)
-            token_nums = max(replicas_to_aggregate - num_workers, 0)
-            sync_init_op = optimizer.get_init_tokens_op(token_nums)
             init_op = tf.global_variables_initializer()
             kill_ps_enqueue_op = kill_ps_queue.enqueue(1)
 
@@ -166,29 +167,29 @@ class Train(object):
                 logger.info("Worker %d: Waiting for session to be initialized..." % self.task_index)
 
             with tf.train.MonitoredTrainingSession(master=self.server.target,
-                                                     is_chief=is_chief,
-                                                     checkpoint_dir=self.model_dir,
-                                                     scaffold=tf.train.Scaffold(init_op=init_op,
-                                                                                init_fn=init_fn),
-                                                     hooks=[tf.train.StopAtStepHook(last_step=total_step),
-                                                            sync_replicas_hook],
-                                                     save_checkpoint_secs=600,
-                                                     config=tf.ConfigProto(
+                                                   is_chief=is_chief,
+                                                   checkpoint_dir=self.model_dir,
+                                                   scaffold=tf.train.Scaffold(init_op=init_op, init_fn=init_fn),
+                                                   hooks=[tf.train.StopAtStepHook(last_step=total_step),
+                                                          sync_replicas_hook],
+                                                   save_checkpoint_secs=600,
+                                                   config=tf.ConfigProto(
                                                          allow_soft_placement=True,
                                                          log_device_placement=False),
-                                                     stop_grace_period_secs=60,
-                                                     log_step_count_steps=100) as sess:
+                                                   stop_grace_period_secs=60,
+                                                   log_step_count_steps=100) as sess:
                 logger.info("Worker %d: Session initialization complete." % self.task_index)
 
                 while not sess.should_stop():
                     start = time.time()
-                    if self.input_mode == Input.InputOptions.TF_RECORD:
+                    if self.input_mode == Input.InputOptions.TF_RECORD or self.input_mode == Input.InputOptions.DATAPATHLOADER:
                         _, step, loss_value = sess.run([train_op, global_step, loss])
                     else:
+                        sample_path_queue = self.data_loader.load_queue_for_placeholder(data_dir)
                         raw_data_batch, ground_truth_batch = self.data_loader.load_placeholder_data(sample_path_queue)
                         # Using placeholder
                         _, step, loss_value = sess.run([train_op, global_step, loss],
-                                                                 feed_dict={raw_data: raw_data_batch,
+                                                       feed_dict={raw_data: raw_data_batch,
                                                                             ground_truth: ground_truth_batch})
                     duration = time.time() - start
                     if step % 10 == 0:
@@ -198,9 +199,11 @@ class Train(object):
                         format_str = ('step %d, loss = %.8f (%.1f examples/sec; %.3f '
                                       'sec/batch)')
                         logger.info(format_str % (step, loss_value, examples_per_sec, sec_per_batch))
-                    if sess.should_stop():
+                    if step == total_step:
                         sess.run(kill_ps_enqueue_op)
                         logger.info('kill_ps_enqueue_op done....')
+                        break
+                sess.close()
 
         # ####################################################################################
         # #############################Post Train Function #######################################
@@ -214,6 +217,7 @@ class Train(object):
                    pre_process_fn=None if not hasattr(self, "pre_process_fn") else getattr(self, "pre_process_fn"),
                    post_process_fn=None if not hasattr(self, "post_process_fn") else getattr(self, "post_process_fn"),
                    init_fn=None if not hasattr(self, "init_fn") else getattr(self, "init_fn"),
+                   parse_data_dir_fn=None if not hasattr(self, 'parse_data_dir_fn') else getattr(self, 'parse_data_dir_fn')
         )
 
 

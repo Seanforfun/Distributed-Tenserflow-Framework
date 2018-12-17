@@ -19,14 +19,18 @@ import distribute_constants as constants
 class InputOptions(Enum):
     TF_RECORD = 0
     PLACEHOLDER = 1
+    DATAPATHLOADER = 2
 
 
 class Dataloader(metaclass=abc.ABCMeta):
     @abc.abstractmethod
-    def load_train_batch(self, *args, **kwargs):
+    def load_train_batch(self, name_queue=None, *args, **kwargs):
         """
         Users need to implement this method to get input and ground truth.
         data_dir: Place to load data, can be either a string or a tuple contains multiple paths.
+        :param name_queue: (Optional) Load data from name queue.
+        tf-record implementation: We create a queue using string_input_producer.
+        placeholder implementation:
         :param args: (Optional) Additional parameters for training.
         :param kwargs: (Optional) Additional dict for training.
         :return: raw_data batch
@@ -68,10 +72,10 @@ class Dataloader(metaclass=abc.ABCMeta):
 class TFRecordDataLoader(Dataloader, metaclass=abc.ABCMeta):
     type = "TFRecordDataLoader"
 
-    def load_train_batch(self, train_image_filename_queue, *args, **kwargs):
-        if train_image_filename_queue is None:
+    def load_train_batch(self, name_queue=None, *args, **kwargs):
+        if name_queue is None:
             raise RuntimeError("Cannot find get the queue from tf-record.")
-        raw_data, ground_truth = self.load_batch_from_tfrecord(train_image_filename_queue)
+        raw_data, ground_truth = self.load_batch_from_tfrecord(name_queue)
         return raw_data, ground_truth
 
     def load_eval_batch(self, *args, **kwargs):
@@ -94,7 +98,7 @@ class TFRecordDataLoader(Dataloader, metaclass=abc.ABCMeta):
             serialized_example,
             self.features)
         example_list = self.__decode_raw_data(raw_features, height, width, args, kwargs)
-        min_queue_examples = int(self.sample_number *  constants.MIN_FRACTION_OF_EXAMPLE_IN_QUEUE)
+        min_queue_examples = int(self.sample_number * constants.MIN_FRACTION_OF_EXAMPLE_IN_QUEUE)
         batch_data = self._generate_image_batch(example_list,
                                                 min_queue_examples,
                                                 multiprocessing.cpu_count() * 2,
@@ -102,10 +106,52 @@ class TFRecordDataLoader(Dataloader, metaclass=abc.ABCMeta):
         return batch_data
 
 
+class DataPathDataLoader(Dataloader, metaclass=abc.ABCMeta):
+    type = "DataPathDataLoader"
+
+    def load_train_batch(self, name_queue=None, *args, **kwargs):
+        assert name_queue is not None, "name queue cannot be None for DataPathDataLoader!"
+        reader = self.__create_reader()
+        key, value = reader.read()
+        example_list = self.__parse_raw_data(value)
+        min_queue_examples = int(self.sample_number * constants.MIN_FRACTION_OF_EXAMPLE_IN_QUEUE)
+        return self._generate_image_batch(example_list, min_queue_examples,
+                                          multiprocessing.cpu_count() * 2,
+                                          shuffle=True)
+
+    def load_eval_batch(self, *args, **kwargs):
+        pass
+
+    @abc.abstractmethod
+    def __parse_raw_data(self, raw_reader_data):
+        """
+        Parse the raw data from reader and decode them to tensors which can be used directly
+        in the network.
+        :param raw_reader_data: raw_data is directly from reader.
+        :return: example_list
+        """
+        pass
+
+    @abc.abstractmethod
+    def __create_reader(self):
+        """
+        :return: Create a reader for parsing data listed in the queue.
+        """
+        pass
+
+    @abc.abstractmethod
+    def create_name_queue(self, data_dir):
+        """
+        Create a name queue for reader to read data from there.
+        :return: A name queue saving all full path to load the data.
+        """
+        pass
+
+
 class PlaceholderDataLoader(Dataloader, metaclass=abc.ABCMeta):
     type = "PlaceholderDataLoader"
 
-    def load_train_batch(self, *args, **kwargs):
+    def load_train_batch(self, name_queue=None, *args, **kwargs):
         return self.__create_placeholder(args, kwargs)
 
     def load_eval_batch(self, *args, **kwargs):

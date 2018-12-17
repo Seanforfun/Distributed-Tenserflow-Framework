@@ -104,6 +104,26 @@ def get_advice(**kwds):
     return decorate
 
 
+def parse_data_dir(**kwds):
+    """
+    This annotation is used for parsing data dir string. Since one training example
+    may contains multiple paths for loading the data, so we can inject this method
+    to change the data into the way that we want.
+    If this annotation is not used, we will call the data dir directly.
+    :scope: Put it on the Train class in distribute_train.py for training or
+    Eval class in distribute_eval.py for evaluation.
+    :param kwds: Dict, we can use it to pass function handlers, key is 'parse_data_dir_fn'.
+    :return:decorate
+    example: @parse_data_dir(parse_data_dir_fn=print('Test data dir'))
+    """
+    def decorate(f):
+        for k in kwds:
+            if k == 'parse_data_dir_fn':
+                setattr(f, k, kwds[k])
+        return f
+    return decorate
+
+
 def gpu_num(**kwds):
     """
     Annotation for getting number using gpu.

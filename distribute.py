@@ -90,8 +90,11 @@ def main(self):
         features = annotations.get_value_from_annotation(main, 'features')
         setattr(data_loader, 'features', features)
         input_mode = Input.InputOptions.TF_RECORD
-    else:
+    elif data_loader.type == "PlaceholderDataLoader":
         input_mode = Input.InputOptions.PLACEHOLDER
+    elif data_loader.type == "DataPathDataLoader":
+        input_mode = Input.InputOptions.DATAPATHLOADER
+    assert input_mode is not None, "Must assign a valid input_mode by using @current_input!"
     setattr(data_loader, 'batch_size', batch_size)
     setattr(data_loader, 'sample_number', sample_number)
     setattr(data_loader, 'data_dir', data_dir)

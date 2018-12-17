@@ -123,9 +123,9 @@ class Tower():
         :return:  The result from the net, might be post processed by handler post_process_fn.
         """
         logist = self.net.process(self.raw_data, args, kwargs)
-        if post_process_fn is not None:
-            # Currently, our result has been modified for doing loss calculation.
-            logist = post_process_fn(logist)
+        # Currently, our result has been modified for doing loss calculation.
+        # Then we weave the injection function.
+        logist = logist if post_process_fn is None else post_process_fn(logist)
         # Build the portion of the Graph calculating the losses. Note that we will
         # assemble the total_loss using a custom function below.
         _ = Tower.loss_to_scope(self, logist)
